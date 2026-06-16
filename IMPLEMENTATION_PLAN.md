@@ -87,7 +87,9 @@ state*. Triage is the central task (not medical Q&A); `.md` is the source of tru
 | RunPod API key (Alien) | serverless vLLM endpoint | needed Day 4 |
 | GitHub repo | CI/CD (gh authed as ghislaindelabie) | default: private `oc14-medical-triage-llm` |
 
-## Open decisions (for your review)
-1. Confirm **Base = primary / Instruct = comparison** (or full DPO on both).
-2. Rubric specifics: formal DPIA or report RGPD section? numeric pass thresholds? DPO graded separately?
-3. Accounts above ready?
+## Decisions (updated 2026-06-16)
+1. ✅ **Base = primary, Instruct = comparison** (confirmed). The served/deployed model is Base
+   (SFT+LoRA → DPO → merge); Instruct gets the same SFT + eval as the comparison arm.
+2. ⏸ Rubric specifics (formal DPIA vs report RGPD section, numeric pass thresholds, DPO graded
+   separately) — **deferred**, to revisit before the report.
+3. Accounts: GitHub repo created + pushed. HF / Kaggle / W&B / RunPod pending for training + deploy.
