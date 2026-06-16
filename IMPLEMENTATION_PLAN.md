@@ -1,0 +1,93 @@
+# OC14 — Implementation plan
+
+Operational companion to `docs/research/00-OVERALL-APPROACH.md` (the *why*; read its §0 locked
+decisions and §0b mentor integration first). This file is the *what / in what order / current
+state*. Triage is the central task (not medical Q&A); `.md` is the source of truth.
+
+---
+
+## Current state (2026-06-16)
+
+**Done / scaffolded and runnable (CPU on P710, no credentials needed):**
+- ✅ Repo scaffold: `uv` project, `src/oc14_triage`, ruff + pytest, `.gitignore` (data not committed).
+- ✅ **Data collected**: MediQAl (FR, CC-BY-4.0 — mcqu/mcqm/oeq), MedQuAD (EN), UltraMedical-Preference
+  (EN, MIT) downloaded to `data/raw/` with a verified-schema inventory (`data/raw/_inventory.json`).
+  FrenchMedMCQA **disabled** (ships a loader script modern `datasets` rejects; MediQAl covers FR amply).
+- ✅ **SFT dataset built** (`data/processed/sft_{train,val}.jsonl`): 5,000 train / 556 val,
+  ~80% FR / 20% EN, **triage = 28%** (urgency→justification→recommendation), built from
+  hand-written bilingual vignettes + MediQAl clinical-case rows reshaped into triage + medical-QA.
+- ✅ **DPO dataset built** (`data/processed/dpo_{train,val}.jsonl`): 1,350 train / 150 val =
+  hand-written **bilingual safety pairs** + filtered UltraMedical (score-gap ≥0.5).
+- ✅ **Eval metrics** (`eval/metrics.py`): triage-first (urgency agreement + κ, red-flag escalation
+  recall, disclaimer/format/no-`<think>`/language-match rates). Unit-tested.
+- ✅ **GDPR/provenance card** generator (`data/card.py` → `data/cards/DATA_CARD.md`).
+- ✅ **CI** (`.github/workflows/ci.yml`): ruff + pytest (data-dependent tests skip without data).
+
+**Not yet (needs decisions and/or credentials — see below):**
+- ⬜ Training notebooks (Kaggle/Colab): SFT-LoRA + DPO for Base **and** Instruct.
+- ⬜ Merge + offline vLLM verify + push to HF.
+- ⬜ Serving: RunPod serverless (stock worker-vllm) + thin FastAPI safety wrapper.
+- ⬜ CI deploy step (build/push wrapper image; documented manual RunPod redeploy).
+- ⬜ Eval harness run against the live endpoint; cost (training + deployment) measurement.
+- ⬜ Presidio verification pass + audit log (`data/anonymize.py`).
+- ⬜ 20-page report (build incrementally as a running log).
+
+---
+
+## Deliverables → tasks
+
+### 1. Dataset (bilingual, anonymised, GDPR-documented) — **mostly done**
+- [x] Collect + verify schemas; [x] build SFT (triage-central) + DPO; [x] provenance/GDPR card.
+- [ ] Presidio verification pass (`uv sync --extra anon`; FR `fr_core_news_md` + EN), audit log, append findings to the card.
+- [ ] Grow EN triage vignettes to ~100–150 and keep the eval set bilingual (mentor §0b). *(needs review/clinical input)*
+- [ ] (optional) Push the processed dataset to HF Hub. *(needs `HF_TOKEN`)*
+
+### 2. Fine-tuned model (SFT+LoRA → DPO) — **blocked on GPU/Kaggle**
+- [ ] `notebooks/sft_lora.ipynb` (Unsloth, Qwen3-1.7B): apply chat template; **read `tokenizer.eos_token`**
+  (it's `<|endoftext|>`; train to emit `<|im_end|>`), loss on assistant tokens only; `save_steps=50`,
+  push adapter to HF each interval; `set_seed(3407)`; W&B.
+- [ ] `notebooks/dpo.ipynb`: DPO on the **adapter-attached** SFT model (`ref_model=None`), then **merge once**.
+- [ ] Run for **Base (primary)**; repeat SFT+eval for **Instruct (comparison)**.
+- [ ] Offline `vllm.LLM().generate()` verify in-notebook before push.
+
+### 3. Cloud endpoint (vLLM) — **blocked on RunPod**
+- [ ] RunPod serverless, stock `runpod-workers/worker-vllm`, `--default-chat-template-kwargs '{"enable_thinking": false}'`, vLLM ≥0.9.0.
+- [ ] Thin FastAPI `/triage` wrapper (`serving/`): inject system prompt + `enable_thinking=False` + audit log.
+
+### 4. CI/CD — **partially done**
+- [x] lint + test. [ ] build/push **wrapper** image to GHCR. [ ] documented manual RunPod redeploy (+ optional `workflow_dispatch` live smoke).
+
+### 5. Report (≤20 pages) — **start as a running log Day 1**
+- [ ] Method (data + GDPR incl. MIETIC exclusion), SFT/DPO curves, serving + **cost (training + deployment)**, CI/CD, eval + safety + Goh et al. framing.
+
+---
+
+## Re-baselined schedule (~7 working days; see research §6 for detail)
+
+| Day | Focus |
+|---|---|
+| ~~0~~ | ✅ Scaffold + data collection + SFT/DPO build + eval/CI scaffold (this session). |
+| 1 | Accounts/secrets; Presidio pass; grow EN triage vignettes + bilingual eval set; start `REPORT.md` log. |
+| 2 | Kaggle: Unsloth install smoke + `pip freeze` lockfile; SFT-LoRA run (Base). |
+| 3 | DPO (Base) + merge + offline vLLM verify + push; SFT (Instruct, comparison). |
+| 4 | RunPod serverless endpoint live (hard gate); FastAPI wrapper. |
+| 5 | CI deploy (wrapper image) + documented redeploy; eval harness vs endpoint; cost calc. |
+| 6 | Base-vs-Instruct comparison; safety review of emergency probes. |
+| 7 + buffer | Report editing; clean-checkout demo; polish. |
+
+---
+
+## Credentials
+
+| Credential | For | Status |
+|---|---|---|
+| `HF_TOKEN` (write) | rate-limit-free downloads; push dataset + model | optional now, needed to push |
+| Kaggle (phone-verified + `kaggle.json`) | free T4 training | needed Day 2 |
+| `WANDB_API_KEY` | experiment tracking | needed Day 2 |
+| RunPod API key (Alien) | serverless vLLM endpoint | needed Day 4 |
+| GitHub repo | CI/CD (gh authed as ghislaindelabie) | default: private `oc14-medical-triage-llm` |
+
+## Open decisions (for your review)
+1. Confirm **Base = primary / Instruct = comparison** (or full DPO on both).
+2. Rubric specifics: formal DPIA or report RGPD section? numeric pass thresholds? DPO graded separately?
+3. Accounts above ready?

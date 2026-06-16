@@ -1,0 +1,28 @@
+name: CI
+
+# POC-scope CI: lint + unit tests on the data-prep / eval / serving code (the code we own).
+# It does NOT train or touch a GPU (no GPU runners). Data-dependent tests skip when data is
+# absent (data/ is gitignored). The model is served by the stock RunPod worker-vllm image;
+# the deploy step is a documented manual RunPod redeploy (see IMPLEMENTATION_PLAN.md).
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync (dev + eval)
+        run: uv sync --extra eval
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Pytest
+        run: uv run pytest
