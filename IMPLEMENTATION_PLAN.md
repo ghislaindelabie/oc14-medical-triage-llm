@@ -26,8 +26,12 @@ state*. Triage is the central task (not medical Q&A); `.md` is the source of tru
 - ✅ **SFT-LoRA notebook VALIDATED on Kaggle T4** (`notebooks/oc14-sft-lora/`): 5-step smoke ran `COMPLETE` — data resolves, ChatML template applies, train-on-responses-only works, adapter saves, generation emits triage format (loss 1.78 @ step 5). Full run launched.
   - Kaggle landmines solved: push with `--accelerator NvidiaTeslaT4` (P100 default is too old); cu128 torch install; datasets mount at `/kaggle/input/datasets/<owner>/<slug>/` (glob to find); Qwen3-Base has **no** chat_template → set ChatML explicitly.
 
+- ✅ **Full SFT run (Base) COMPLETE** (2026-06-18): train_loss **0.845** (from ~1.78), 314 steps / 2 epochs, ~79 min on T4 (free). LoRA adapter (69 MB) saved + persisted at `models/sft-base-lora/` (gitignored; ChatML template propagated to the saved tokenizer). Push to HF pending `HF_TOKEN`.
+  - ⚠️ **Inference config to fix before eval/serving:** generations must **stop on `<|im_end|>`** (eos is `<|endoftext|>`) or the small model runs past the answer into repetition; and eval must use the **full trained `SYSTEM_PROMPT_FR`** (a shortened prompt drifts the format). Both are the verified Decision-H items.
+
 **Not yet:**
-- 🟡 Full SFT run (Base) in progress; then DPO notebook (DPO on adapter-attached model → merge once after); then repeat SFT for the Instruct comparison arm.
+- ⬜ DPO notebook (DPO on the adapter-attached SFT model → merge once after) with correct inference settings.
+- ⬜ Repeat SFT for the Instruct comparison arm; eval harness vs both; serving.
 - ⬜ Merge + offline vLLM verify + push to HF.
 - ⬜ Serving: RunPod serverless (stock worker-vllm) + thin FastAPI safety wrapper.
 - ⬜ CI deploy step (build/push wrapper image; documented manual RunPod redeploy).
