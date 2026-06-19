@@ -150,5 +150,78 @@ def build(cells, path: Path):
     print(f"wrote {path}  ({len(cells)} cells)")
 
 
+# --- Quick eval notebook: correct inference (stop on <|im_end|>, trained system prompt) ---
+EVAL_CELLS = [
+    ("md", """# OC14 — Quick eval of the SFT (Base) model
+
+Loads the LoRA adapter from the SFT kernel's output and generates with the **correct**
+inference config: stop on `<|im_end|>` (the small model otherwise runs past the answer into
+repetition), and the **exact trained system prompt** (read back from the dataset). Scores the
+held-out hand-labelled triage vignettes. Small set (6) — a sanity check, not the final eval."""),
+    SFT_CELLS[1],  # identical cu128 install
+    SFT_CELLS[2],  # pip-freeze lockfile
+    ("code", "import glob, os, json\n"
+     "ad = glob.glob('/kaggle/input/**/sft_adapter/adapter_config.json', recursive=True)\n"
+     "assert ad, 'adapter not found — is the SFT kernel attached as a kernel source?'\n"
+     "ADAPTER_DIR = os.path.dirname(ad[0]); print('ADAPTER_DIR =', ADAPTER_DIR)\n"
+     "dd = glob.glob('/kaggle/input/**/sft_train.jsonl', recursive=True)\n"
+     "DATA_DIR = os.path.dirname(dd[0]) if dd else None\n"
+     "# Read the EXACT trained system prompts back from the data (guarantees eval matches training).\n"
+     "SYS = {}\n"
+     "if DATA_DIR:\n"
+     "    for ln in open(f'{DATA_DIR}/sft_train.jsonl', encoding='utf-8').read().split('\\n'):\n"
+     "        if not ln.strip():\n"
+     "            continue\n"
+     "        r = json.loads(ln)\n"
+     "        SYS.setdefault(r['lang'], r['messages'][0]['content'])\n"
+     "        if len(SYS) == 2:\n"
+     "            break\n"
+     "print('system prompts loaded for langs:', list(SYS))"),
+    ("code", "from unsloth import FastLanguageModel\n"
+     "model, tokenizer = FastLanguageModel.from_pretrained(\n"
+     "    model_name=ADAPTER_DIR, max_seq_length=2048, load_in_4bit=True)\n"
+     "FastLanguageModel.for_inference(model)\n"
+     "IM_END = tokenizer.convert_tokens_to_ids('<|im_end|>')\n"
+     "STOP_IDS = [IM_END, tokenizer.eos_token_id]\n"
+     "print('eos:', tokenizer.eos_token, '| im_end id:', IM_END)\n"
+     "def gen(system, user):\n"
+     "    msgs = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]\n"
+     "    ids = tokenizer.apply_chat_template(msgs, add_generation_prompt=True, return_tensors='pt'\n"
+     "                                        ).to(model.device)\n"
+     "    out = model.generate(input_ids=ids, max_new_tokens=256, do_sample=True,\n"
+     "                         temperature=0.3, top_p=0.9, repetition_penalty=1.1,\n"
+     "                         eos_token_id=STOP_IDS)\n"
+     "    return tokenizer.decode(out[0][ids.shape[1]:], skip_special_tokens=True).strip()"),
+    ("code", "LEVELS = ('urgence maximale', 'urgence modérée', 'urgence différée')\n"
+     "def extract_urgency(t):\n"
+     "    low = t.lower(); hits = [(low.index(l), l) for l in LEVELS if l in low]\n"
+     "    return min(hits)[1] if hits else None\n"
+     "def has_disclaimer(t):\n"
+     "    low = t.lower(); return ('ne remplace pas' in low) or ('does not replace' in low)\n"
+     "# Held-out hand-labelled vignettes (from vignettes.py, split='eval').\n"
+     "VIGN = [\n"
+     "  ('fr', 'Homme de 60 ans, malaise avec perte de connaissance brève et pâleur intense.', 'urgence maximale'),\n"
+     "  ('fr', 'Adolescent, mal de gorge et fièvre légère depuis hier, sans difficulté à avaler.', 'urgence modérée'),\n"
+     "  ('fr', 'Femme de 35 ans, demande de certificat médical pour le sport.', 'urgence différée'),\n"
+     "  ('en', '50-year-old, sudden worst-ever headache with vomiting and neck stiffness.', 'urgence maximale'),\n"
+     "  ('en', '27-year-old with mild ankle pain after jogging, able to walk.', 'urgence modérée'),\n"
+     "  ('en', '40-year-old asking how to renew a stable long-term prescription.', 'urgence différée'),\n"
+     "]\n"
+     "res = []\n"
+     "for lang, user, gold in VIGN:\n"
+     "    txt = gen(SYS.get(lang, 'You are a medical triage assistant.'), user)\n"
+     "    pred = extract_urgency(txt)\n"
+     "    res.append((lang, gold, pred, has_disclaimer(txt), txt))\n"
+     "    print(f'[{lang}] gold={gold} | pred={pred}')\n"
+     "    print('  ' + txt.replace(chr(10), ' ')[:300]); print('-' * 70)\n"
+     "n = len(res)\n"
+     "acc = sum(g == p for _, g, p, _, _ in res) / n\n"
+     "fmt = sum(p is not None for _, _, p, _, _ in res) / n\n"
+     "disc = sum(d for *_, d, _ in res) / n\n"
+     "print(f'\\n=== n={n} | urgency_accuracy={acc:.2f} | format_rate={fmt:.2f} | disclaimer_rate={disc:.2f}')"),
+]
+
+
 if __name__ == "__main__":
     build(SFT_CELLS, HERE / "oc14-sft-lora" / "oc14-sft-lora.ipynb")
+    build(EVAL_CELLS, HERE / "oc14-sft-eval" / "oc14-sft-eval.ipynb")

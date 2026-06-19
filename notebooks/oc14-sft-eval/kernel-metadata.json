@@ -1,0 +1,14 @@
+{
+  "id": "ghislaindelabie/oc14-sft-eval",
+  "title": "OC14 SFT eval",
+  "code_file": "oc14-sft-eval.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["ghislaindelabie/oc14-triage-data"],
+  "kernel_sources": ["ghislaindelabie/oc14-sft-lora-qwen3-1-7b"],
+  "competition_sources": [],
+  "model_sources": []
+}
