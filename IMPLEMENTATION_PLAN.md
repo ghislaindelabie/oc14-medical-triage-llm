@@ -29,9 +29,12 @@ state*. Triage is the central task (not medical Q&A); `.md` is the source of tru
 - ✅ **Full SFT run (Base) COMPLETE** (2026-06-18): train_loss **0.845** (from ~1.78), 314 steps / 2 epochs, ~79 min on T4 (free). LoRA adapter (69 MB) saved + persisted at `models/sft-base-lora/` (gitignored; ChatML template propagated to the saved tokenizer). Push to HF pending `HF_TOKEN`.
   - ⚠️ **Inference config to fix before eval/serving:** generations must **stop on `<|im_end|>`** (eos is `<|endoftext|>`) or the small model runs past the answer into repetition; and eval must use the **full trained `SYSTEM_PROMPT_FR`** (a shortened prompt drifts the format). Both are the verified Decision-H items.
 
+- ✅ **DPO run COMPLETE but REGRESSED** (2026-06-19): SFT+DPO scored 0.33 vs SFT 0.67 and **missed both emergencies**; root cause = DPO set was ~99% UltraMedical (1,489 vs 11 safety pairs) → optimised GPT verbosity. Merge succeeded (`models/dpo-merged-16bit/`). **Per Decision-C fallback, the SFT model is the served deliverable.** Fix path (later): more safety pairs + safety-weighted DPO mix.
+
 **Not yet:**
-- ⬜ DPO notebook (DPO on the adapter-attached SFT model → merge once after) with correct inference settings.
-- ⬜ Repeat SFT for the Instruct comparison arm; eval harness vs both; serving.
+- ⬜ Repeat SFT for the Instruct comparison arm; fuller eval (SFT vs base, larger set).
+- ⬜ Serving: vLLM/RunPod + FastAPI wrapper on the **SFT** merged model; CI deploy step.
+- ⬜ Presidio pass; push dataset + SFT weights to HF (needs `HF_TOKEN`); report.
 - ⬜ Merge + offline vLLM verify + push to HF.
 - ⬜ Serving: RunPod serverless (stock worker-vllm) + thin FastAPI safety wrapper.
 - ⬜ CI deploy step (build/push wrapper image; documented manual RunPod redeploy).

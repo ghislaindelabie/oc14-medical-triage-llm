@@ -8,7 +8,7 @@
   "enable_gpu": true,
   "enable_internet": true,
   "dataset_sources": ["ghislaindelabie/oc14-triage-data"],
-  "kernel_sources": ["ghislaindelabie/oc14-sft-lora-qwen3-1-7b"],
+  "kernel_sources": ["ghislaindelabie/oc14-dpo", "ghislaindelabie/oc14-sft-lora-qwen3-1-7b"],
   "competition_sources": [],
   "model_sources": []
 }

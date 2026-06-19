@@ -50,6 +50,10 @@ serving need a GPU.
   clinical-quality claim. Mix: ~hand-written bilingual safety pairs + filtered UltraMedical.
 - **Ordering invariant:** DPO runs on the SFT model **with the LoRA adapter still attached**; the
   adapter is **merged into the base weights exactly once, after DPO**, never between the stages.
+- **Measured outcome (2026-06-19):** DPO **regressed** the model (urgency 0.33 vs SFT 0.67; **missed
+  both emergencies**; repetition/GPT-isms). Root cause: the built DPO set was ~99% UltraMedical (1,489
+  vs 11 safety pairs), so DPO optimised GPT-4 verbosity, not triage. **→ We ship the SFT model**; DPO is
+  reported as an honest negative result. Fix path: more hand-written safety pairs + a safety-weighted mix.
 - **Tooling:** **Unsloth** (a training wrapper with custom GPU kernels — ~2× faster, less VRAM) on top
   of Hugging Face **TRL/PEFT**. Plain TRL+PEFT is the documented fallback.
 
@@ -116,7 +120,7 @@ Presidio verification pass is wired as a *hypothesis test* (expect ~0 PII; repor
 | Urgency scale | 3-level FR | Brief wording; simplest to label/eval |
 | Training framework | Unsloth (+TRL fallback) | Speed/VRAM on a free T4 |
 | Bridge QA→triage | Reframe + reshape clinical cases + vignettes | No triage-labelled open data; keep it honest |
-| DPO | Yes, safety-weighted | Required deliverable + safety lever (not a quality claim) |
+| DPO | Attempted → **SFT shipped** | DPO regressed on a ~99% UltraMedical set (missed emergencies); honest negative result, fix = more safety pairs |
 | Serve | Merged 16-bit weights | Simplest single-model serving |
 | Endpoint liveness | Serverless scale-to-zero | Cheapest; cold-start reported honestly |
 | Experiment tracking | W&B | One-line, hosted curves, reproducibility |
@@ -124,6 +128,8 @@ Presidio verification pass is wired as a *hypothesis test* (expect ~0 PII; repor
 | Triage data licence | Exclude MIETIC/MIMIC | Credentialed no-redistribution licence |
 
 ## 10. Status
-**Done:** dataset built + documented; **SFT (Base) trained** (loss 0.845, adapter saved); eval harness,
-CI, repo + PR. **Pending:** quick eval write-up, DPO, Instruct comparison arm, merge, vLLM/RunPod
-serving + FastAPI wrapper, CI deploy step, Presidio pass, push artefacts to HF (needs `HF_TOKEN`), report.
+**Done:** dataset built + documented; **SFT (Base) trained + eval'd** (0.67, both emergencies caught) —
+**this is the served deliverable**; **DPO attempted but regressed** (→ SFT shipped, documented); eval
+harness, CI, repo + PR. **Pending:** Instruct comparison arm; vLLM/RunPod serving + FastAPI wrapper on the
+SFT model; CI deploy step; Presidio pass; push artefacts to HF (needs `HF_TOKEN`); fuller eval; report.
+Optional later: re-run DPO with a safety-weighted (not UltraMedical-dominated) set.

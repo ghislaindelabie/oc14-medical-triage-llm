@@ -129,3 +129,25 @@ exact trained system prompt (read back from the data). Run on a Kaggle T4, `COMP
 - The 2 misses are both **low-urgency** cases (over-triaged or unlabelled) → erring toward *more* caution (the safe direction for triage).
 - **No repetition/degeneration** — confirms the earlier ugly sample was purely inference config (missing `<|im_end|>` stop + shortened prompt), not the trained weights.
 - **Caveat:** n=6 is a sanity check, not statistically meaningful; the `différée` (non-urgent) class is the weakest. A fuller eval (larger set, DPO comparison, base-vs-tuned) comes later.
+
+## DPO outcome (Phase 3) — attempted, **measured regression → SFT shipped**
+Full DPO ran (1 epoch, ~45 min on T4) and the single post-DPO **merge succeeded** (valid 16-bit weights,
+`models/dpo-merged-16bit/`, 3.3 GB). But on the **same** held-out vignettes + same correct inference, the
+SFT+DPO model **regressed**:
+
+| Model | urgency acc | `urgence maximale` caught | disclaimer | generation |
+|---|---|---|---|---|
+| SFT (Base) | **0.67** (4/6) | **2/2** | 0.83 | clean |
+| SFT + DPO | **0.33** (2/6) | **0/2** ⚠️ | 0.67 | repetition + "GPT-isms" |
+
+DPO collapsed predictions toward "modérée" and **missed both emergencies** (the safety-critical class SFT
+got right) — the dangerous direction. **Root cause (verifiable from `_dpo_stats.json`):** the DPO set was
+**1,489 UltraMedical pairs vs only 11 hand-written safety pairs** (~99% UltraMedical). UltraMedical is
+English, GPT-4-scored, and differs mainly in verbosity/formatting, so DPO optimised GPT-style verbosity
+(hence the "Intialized by GPT-4…" artifacts), not triage quality — exactly the red-team's Decision-C risk.
+DPO `train_loss ≈ 0.876` (above the ~0.69 no-preference baseline) is consistent.
+
+**Decision (pre-agreed Decision-C fallback):** **ship the SFT model** as the served deliverable; report DPO
+as attempted-with-measured-regression (a legitimate, honest POC result). **Fix path ("deepen later"):**
+grow the hand-written safety/triage vignettes to ~300–500 (the §0b target) and re-run DPO with a
+safety-weighted mix (mostly safety pairs, subsampled UltraMedical) — the **data**, not the method, was the problem.

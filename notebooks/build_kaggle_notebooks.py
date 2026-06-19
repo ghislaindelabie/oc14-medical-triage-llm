@@ -161,8 +161,10 @@ held-out hand-labelled triage vignettes. Small set (6) — a sanity check, not t
     SFT_CELLS[1],  # identical cu128 install
     SFT_CELLS[2],  # pip-freeze lockfile
     ("code", "import glob, os, json\n"
-     "ad = glob.glob('/kaggle/input/**/sft_adapter/adapter_config.json', recursive=True)\n"
-     "assert ad, 'adapter not found — is the SFT kernel attached as a kernel source?'\n"
+     "# Prefer the SFT+DPO adapter if attached; else the SFT adapter. (Compare both runs.)\n"
+     "ad = (glob.glob('/kaggle/input/**/dpo_adapter/adapter_config.json', recursive=True)\n"
+     "      or glob.glob('/kaggle/input/**/sft_adapter/adapter_config.json', recursive=True))\n"
+     "assert ad, 'adapter not found — attach the SFT and/or DPO kernel as a kernel source'\n"
      "ADAPTER_DIR = os.path.dirname(ad[0]); print('ADAPTER_DIR =', ADAPTER_DIR)\n"
      "dd = glob.glob('/kaggle/input/**/sft_train.jsonl', recursive=True)\n"
      "DATA_DIR = os.path.dirname(dd[0]) if dd else None\n"
