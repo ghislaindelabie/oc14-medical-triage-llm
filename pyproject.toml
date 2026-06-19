@@ -40,8 +40,9 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
-# One-off report builder: inline CSS/JS string literals are legitimately long.
+# Builders that embed long inline content (CSS/JS, or notebook cell source) — E501 not meaningful.
 "docs/research/build_report_html.py" = ["E501"]
+"notebooks/build_kaggle_notebooks.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
