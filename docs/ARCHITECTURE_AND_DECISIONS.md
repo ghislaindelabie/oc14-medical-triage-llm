@@ -104,7 +104,10 @@ Presidio verification pass is wired as a *hypothesis test* (expect ~0 PII; repor
 - **Inference config that matters (learned the hard way):** the small model must **stop on `<|im_end|>`**
   (its `eos` is `<|endoftext|>`) and use the **full trained system prompt**, or it degenerates into
   repetition. This is also exactly how we'll serve it via vLLM.
-- **Quick SFT eval result:** *(filled once the eval run completes — see `DEVELOPMENT_JOURNAL.md`).*
+- **Quick SFT eval result (Base, 6 held-out vignettes, correct inference):** urgency accuracy **0.67
+  (4/6)**, format **0.83**, disclaimer **0.83**; **both safety-critical `urgence maximale` cases caught
+  (2/2)**; the 2 misses were low-urgency (over-cautious — safe direction); no degeneration. n=6 is a
+  sanity check, not statistically meaningful (details in `DEVELOPMENT_JOURNAL.md`).
 
 ## 9. Key decisions (the genuine forks)
 | Decision | Choice | Why |

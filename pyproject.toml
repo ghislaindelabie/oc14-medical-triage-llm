@@ -35,6 +35,8 @@ packages = ["src/oc14_triage"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+# Jupyter notebooks are Kaggle run artifacts (generated), not package code — don't lint them.
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

@@ -119,6 +119,13 @@ template was rendered locally with jinja2 before pushing) because each Kaggle ro
 - Notebooks: `notebooks/oc14-sft-lora/`, `notebooks/oc14-sft-eval/` (+ generator `build_kaggle_notebooks.py`).
 - Research + plan: `docs/research/00`–`09`, `IMPLEMENTATION_PLAN.md`.
 
-## Eval results (Phase 3)
-*Pending the eval run; this section will be filled with the held-out urgency-accuracy / format /
-disclaimer rates and a couple of verbatim generations once the Kaggle eval kernel completes.*
+## Eval results (Phase 3) — SFT (Base), correct inference
+Quick eval on the **6 held-out hand-labelled vignettes**, generating with stop-on-`<|im_end|>` + the
+exact trained system prompt (read back from the data). Run on a Kaggle T4, `COMPLETE`:
+
+- **urgency_accuracy = 0.67 (4/6)** · format_rate = **0.83** · disclaimer_rate = **0.83**
+- Per case: FR maximale→maximale ✓ · FR modérée→modérée ✓ · FR différée→**modérée ✗** · EN maximale→maximale ✓ · EN modérée→modérée ✓ · EN différée→**None ✗**
+- **Both `urgence maximale` (safety-critical) cases caught — FR and EN (2/2).**
+- The 2 misses are both **low-urgency** cases (over-triaged or unlabelled) → erring toward *more* caution (the safe direction for triage).
+- **No repetition/degeneration** — confirms the earlier ugly sample was purely inference config (missing `<|im_end|>` stop + shortened prompt), not the trained weights.
+- **Caveat:** n=6 is a sanity check, not statistically meaningful; the `différée` (non-urgent) class is the weakest. A fuller eval (larger set, DPO comparison, base-vs-tuned) comes later.
