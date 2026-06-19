@@ -235,7 +235,7 @@ The SFT adapter is read from the SFT kernel's output (kernel source). **First ru
     SFT_CELLS[2],  # pip-freeze lockfile
     SFT_CELLS[3],  # secrets -> REPORT_TO, HF_TOKEN
     ("code", "import glob\n"
-     "SMOKE = True               # full run: set False (then it also merges once + can push to HF)\n"
+     "SMOKE = False              # full run (1 epoch + merge once). Set True for an ~8-step validation.\n"
      "SEED = 3407\n"
      "_ad = glob.glob('/kaggle/input/**/sft_adapter/adapter_config.json', recursive=True)\n"
      "assert _ad, 'SFT adapter not found — attach the SFT kernel as a kernel source'\n"
