@@ -222,6 +222,82 @@ held-out hand-labelled triage vignettes. Small set (6) — a sanity check, not t
 ]
 
 
+# --- DPO notebook: align the SFT model to safer answers, then merge once ---
+DPO_CELLS = [
+    ("md", """# OC14 — DPO on the SFT (Base) model
+
+Direct Preference Optimization on top of the SFT LoRA adapter. **Ordering invariant:** DPO runs on the
+SFT model **with the adapter still attached** (`ref_model=None` recovers the reference by disabling the
+adapter); the adapter is **merged into the base weights exactly once, after DPO** (the full run).
+The SFT adapter is read from the SFT kernel's output (kernel source). **First run: `SMOKE = True`**
+(~8 steps). Reads `WANDB_API_KEY`/`HF_TOKEN` from Kaggle Secrets if present."""),
+    SFT_CELLS[1],  # cu128 install
+    SFT_CELLS[2],  # pip-freeze lockfile
+    SFT_CELLS[3],  # secrets -> REPORT_TO, HF_TOKEN
+    ("code", "import glob\n"
+     "SMOKE = True               # full run: set False (then it also merges once + can push to HF)\n"
+     "SEED = 3407\n"
+     "_ad = glob.glob('/kaggle/input/**/sft_adapter/adapter_config.json', recursive=True)\n"
+     "assert _ad, 'SFT adapter not found — attach the SFT kernel as a kernel source'\n"
+     "SFT_ADAPTER_DIR = os.path.dirname(_ad[0]); print('SFT_ADAPTER_DIR =', SFT_ADAPTER_DIR)\n"
+     "_dd = glob.glob('/kaggle/input/**/dpo_train.jsonl', recursive=True)\n"
+     "assert _dd, 'dpo_train.jsonl not found'\n"
+     "DATA_DIR = os.path.dirname(_dd[0]); print('DATA_DIR =', DATA_DIR)\n"
+     "OUT_MERGED = '/kaggle/working/dpo_merged_16bit'\n"
+     "HF_REPO = 'ghislaindelabie/oc14-qwen3-1.7b-base-sft-dpo'"),
+    ("code", "from unsloth import PatchDPOTrainer\n"
+     "PatchDPOTrainer()  # must precede DPOTrainer creation\n"
+     "from unsloth import FastLanguageModel\n"
+     "# Continue from the SFT adapter (do NOT add fresh LoRA — that would discard SFT).\n"
+     "model, tokenizer = FastLanguageModel.from_pretrained(\n"
+     "    model_name=SFT_ADAPTER_DIR, max_seq_length=2048, load_in_4bit=True)\n"
+     "print('eos:', tokenizer.eos_token, '| chat_template set:', tokenizer.chat_template is not None)"),
+    ("code", "from datasets import load_dataset\n"
+     "ds = load_dataset('json', data_files={\n"
+     "    'train': f'{DATA_DIR}/dpo_train.jsonl', 'val': f'{DATA_DIR}/dpo_val.jsonl'})\n"
+     "keep = {'prompt', 'chosen', 'rejected'}\n"
+     "ds = ds.remove_columns([c for c in ds['train'].column_names if c not in keep])\n"
+     "print(ds)"),
+    ("code", "from trl import DPOConfig, DPOTrainer\n"
+     "# trl 0.22.2: beta + max_length + max_prompt_length live in DPOConfig; use processing_class=.\n"
+     "cfg = DPOConfig(\n"
+     "    beta=0.1, max_length=2048, max_prompt_length=1024,\n"
+     "    per_device_train_batch_size=2, gradient_accumulation_steps=4,\n"
+     "    warmup_ratio=0.1, num_train_epochs=1, max_steps=(8 if SMOKE else -1),\n"
+     "    learning_rate=5e-6, logging_steps=5, save_steps=50, save_total_limit=2,\n"
+     "    optim='adamw_8bit', weight_decay=0.0, lr_scheduler_type='linear',\n"
+     "    seed=SEED, output_dir='/kaggle/working/dpo_out', report_to=REPORT_TO,\n"
+     "    run_name='oc14-dpo-qwen3-base')\n"
+     "trainer = DPOTrainer(model=model, ref_model=None, args=cfg,\n"
+     "                     train_dataset=ds['train'], eval_dataset=ds['val'],\n"
+     "                     processing_class=tokenizer)\n"
+     "import time\n"
+     "_t = time.time(); stats = trainer.train(); print('dpo seconds:', round(time.time() - _t, 1))\n"
+     "print(getattr(stats, 'metrics', stats))"),
+    ("code", "model.save_pretrained('/kaggle/working/dpo_adapter')\n"
+     "tokenizer.save_pretrained('/kaggle/working/dpo_adapter')\n"
+     "print('saved DPO adapter')\n"
+     "if not SMOKE:\n"
+     "    # Merge ONCE, after DPO -> ordinary 16-bit weights for vLLM. Assert it actually wrote files.\n"
+     "    model.save_pretrained_merged(OUT_MERGED, tokenizer, save_method='merged_16bit')\n"
+     "    files = os.listdir(OUT_MERGED); print('merged files:', files)\n"
+     "    assert any(f.endswith('.safetensors') for f in files), 'merge wrote no weights!'\n"
+     "    if HF_TOKEN:\n"
+     "        model.push_to_hub_merged(HF_REPO, tokenizer, save_method='merged_16bit', token=HF_TOKEN)\n"
+     "        print('pushed merged ->', HF_REPO)"),
+    ("code", "FastLanguageModel.for_inference(model)\n"
+     "IM_END = tokenizer.convert_tokens_to_ids('<|im_end|>')\n"
+     "sys_msg = ds['train'][0]['prompt'][0]['content']  # the trained system prompt\n"
+     "msgs = [{'role': 'system', 'content': sys_msg},\n"
+     "        {'role': 'user', 'content': 'Un patient de 60 ans a une douleur thoracique aiguë avec sueurs depuis 20 min.'}]\n"
+     "ids = tokenizer.apply_chat_template(msgs, add_generation_prompt=True, return_tensors='pt').to(model.device)\n"
+     "out = model.generate(input_ids=ids, max_new_tokens=200, do_sample=True, temperature=0.3,\n"
+     "                     top_p=0.9, repetition_penalty=1.1, eos_token_id=[IM_END, tokenizer.eos_token_id])\n"
+     "print(tokenizer.decode(out[0][ids.shape[1]:], skip_special_tokens=True))"),
+]
+
+
 if __name__ == "__main__":
     build(SFT_CELLS, HERE / "oc14-sft-lora" / "oc14-sft-lora.ipynb")
     build(EVAL_CELLS, HERE / "oc14-sft-eval" / "oc14-sft-eval.ipynb")
+    build(DPO_CELLS, HERE / "oc14-dpo" / "oc14-dpo.ipynb")

@@ -1,0 +1,14 @@
+{
+  "id": "ghislaindelabie/oc14-dpo",
+  "title": "OC14 DPO",
+  "code_file": "oc14-dpo.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["ghislaindelabie/oc14-triage-data"],
+  "kernel_sources": ["ghislaindelabie/oc14-sft-lora-qwen3-1-7b"],
+  "competition_sources": [],
+  "model_sources": []
+}
