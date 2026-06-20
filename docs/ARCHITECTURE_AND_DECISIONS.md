@@ -38,6 +38,10 @@ serving need a GPU.
   a clinical-safety POC that head-start matters. So we fine-tune **both** on the same data and compare;
   **Base is the primary** model we DPO, merge, serve and deploy, **Instruct is the comparison**.
 - **Criterion:** honour the brief while showing the Base-vs-Instruct safety trade-off the mentor/reviewers value.
+- **Empirical result (small eval, 2026-06-20):** **Base SFT (0.67, both emergencies caught) > Instruct SFT
+  (0.33, both missed)** despite near-identical training loss — which **supports the brief's Base choice**
+  (cleaner SFT signal, no competing instruct priors). **Served deliverable = Base SFT.** (n=6; suggestive,
+  not definitive — see `DEVELOPMENT_JOURNAL.md`.)
 
 ## 4. Fine-tuning
 - **SFT (Supervised Fine-Tuning):** show the model good (instruction → response) examples so it learns
@@ -129,7 +133,8 @@ Presidio verification pass is wired as a *hypothesis test* (expect ~0 PII; repor
 
 ## 10. Status
 **Done:** dataset built + documented; **SFT (Base) trained + eval'd** (0.67, both emergencies caught) —
-**this is the served deliverable**; **DPO attempted but regressed** (→ SFT shipped, documented); eval
-harness, CI, repo + PR. **Pending:** Instruct comparison arm; vLLM/RunPod serving + FastAPI wrapper on the
-SFT model; CI deploy step; Presidio pass; push artefacts to HF (needs `HF_TOKEN`); fuller eval; report.
-Optional later: re-run DPO with a safety-weighted (not UltraMedical-dominated) set.
+**served deliverable**, merged to 16-bit (`models/sft-base-merged-16bit/`); **DPO attempted but regressed**
+(→ SFT shipped); **Instruct comparison arm trained + eval'd** (0.33 — Base wins, validates the brief);
+eval harness, CI, repo + PR; all four creds (Kaggle/W&B/HF/GitLab) set. **Pending:** vLLM serving (RunPod
+*or* Modal) + FastAPI wrapper on the merged SFT model; CI deploy step; Presidio pass; fuller eval; report;
+**HF publish (deferred until user's full review)**. Optional later: safety-weighted DPO retry.

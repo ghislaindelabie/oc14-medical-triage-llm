@@ -31,10 +31,13 @@ state*. Triage is the central task (not medical Q&A); `.md` is the source of tru
 
 - ✅ **DPO run COMPLETE but REGRESSED** (2026-06-19): SFT+DPO scored 0.33 vs SFT 0.67 and **missed both emergencies**; root cause = DPO set was ~99% UltraMedical (1,489 vs 11 safety pairs) → optimised GPT verbosity. Merge succeeded (`models/dpo-merged-16bit/`). **Per Decision-C fallback, the SFT model is the served deliverable.** Fix path (later): more safety pairs + safety-weighted DPO mix.
 
+- ✅ **SFT merged to 16-bit** (`models/sft-base-merged-16bit/`, 3.3 GB) — the vLLM-servable model.
+- ✅ **Instruct comparison arm trained + eval'd** (2026-06-20): Instruct SFT **0.33** (missed both emergencies) vs **Base SFT 0.67** (both caught), near-identical train loss → **Base wins, validates the brief's Base choice**. Base SFT stays the deliverable.
+
 **Not yet:**
-- ⬜ Repeat SFT for the Instruct comparison arm; fuller eval (SFT vs base, larger set).
-- ⬜ Serving: vLLM/RunPod + FastAPI wrapper on the **SFT** merged model; CI deploy step.
-- ⬜ Presidio pass; push dataset + SFT weights to HF (needs `HF_TOKEN`); report.
+- ⬜ Serving: vLLM (**RunPod or Modal** — user deciding) + FastAPI wrapper on the merged SFT model; CI deploy step.
+- ⬜ Fuller eval (larger held-out set); Presidio pass; report.
+- ⬜ HF publish (dataset + SFT weights) — **deferred until user's full review**; pushable from P710 (weights local, `HF_TOKEN` set).
 - ⬜ Merge + offline vLLM verify + push to HF.
 - ⬜ Serving: RunPod serverless (stock worker-vllm) + thin FastAPI safety wrapper.
 - ⬜ CI deploy step (build/push wrapper image; documented manual RunPod redeploy).

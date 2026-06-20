@@ -151,3 +151,25 @@ DPO `train_loss ≈ 0.876` (above the ~0.69 no-preference baseline) is consisten
 as attempted-with-measured-regression (a legitimate, honest POC result). **Fix path ("deepen later"):**
 grow the hand-written safety/triage vignettes to ~300–500 (the §0b target) and re-run DPO with a
 safety-weighted mix (mostly safety pairs, subsampled UltraMedical) — the **data**, not the method, was the problem.
+
+## Base vs Instruct vs DPO — comparison (Phase 3)
+All three scored on the **same** 6 held-out hand-labelled vignettes, same correct inference:
+
+| Model | urgency acc | `urgence maximale` caught | format | disclaimer |
+|---|---|---|---|---|
+| **Base SFT** | **0.67** (4/6) | **2/2** | 0.83 | 0.83 |
+| Base SFT + DPO | 0.33 (2/6) | 0/2 | 0.83 | 0.67 |
+| Instruct SFT | 0.33 (2/6) | 0/2 | 0.67 | 0.67 |
+
+**Base SFT is the best of the three — and the only one that catches both emergencies.** Training losses
+were near-identical (Base 0.845, Instruct 0.854, ~72–79 min each), so the gap is **behavioural**, not fit.
+
+**Reading (honest):**
+- This **supports the brief's choice of Base**: a raw model gives a cleaner SFT signal with no competing
+  instruct priors. We overrode the Instruct model's native chat template with our plain ChatML (for
+  apples-to-apples + non-thinking serving), and its existing alignment likely interfered with the small
+  triage SFT — lowering format adherence and emergency detection.
+- DPO and Instruct-SFT both underperformed Base SFT → **Base SFT remains the served deliverable.**
+- **Caveat:** n=6 is a sanity check, not statistically significant; the direction (Base best, only Base
+  catches emergencies) is suggestive, not definitive. A fuller eval (larger held-out set; optionally the
+  Instruct *native* template) is future work.
