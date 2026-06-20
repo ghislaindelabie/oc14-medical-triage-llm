@@ -345,3 +345,5 @@ if __name__ == "__main__":
     build(DPO_CELLS, HERE / "oc14-dpo" / "oc14-dpo.ipynb")
     build(with_instruct(SFT_CELLS), HERE / "oc14-sft-instruct" / "oc14-sft-instruct.ipynb")
     build(MERGE_CELLS, HERE / "oc14-sft-merge" / "oc14-sft-merge.ipynb")
+    # Same eval cells; the kernel-metadata decides which model (via kernel_sources) gets scored.
+    build(EVAL_CELLS, HERE / "oc14-instruct-eval" / "oc14-instruct-eval.ipynb")

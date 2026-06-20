@@ -1,0 +1,14 @@
+{
+  "id": "ghislaindelabie/oc14-instruct-eval",
+  "title": "OC14 Instruct eval",
+  "code_file": "oc14-instruct-eval.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["ghislaindelabie/oc14-triage-data"],
+  "kernel_sources": ["ghislaindelabie/oc14-sft-instruct"],
+  "competition_sources": [],
+  "model_sources": []
+}
