@@ -1,0 +1,14 @@
+{
+  "id": "ghislaindelabie/oc14-sft-merge",
+  "title": "OC14 SFT merge",
+  "code_file": "oc14-sft-merge.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "kernel_sources": ["ghislaindelabie/oc14-sft-lora-qwen3-1-7b"],
+  "competition_sources": [],
+  "model_sources": []
+}

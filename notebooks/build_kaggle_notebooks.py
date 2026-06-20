@@ -299,7 +299,49 @@ The SFT adapter is read from the SFT kernel's output (kernel source). **First ru
 ]
 
 
+# --- Instruct comparison arm: same SFT recipe on Qwen3-1.7B (Instruct) ---
+def with_instruct(cells):
+    """Derive the Instruct SFT notebook from the Base SFT cells (string swaps, order matters)."""
+    reps = [
+        ("Qwen/Qwen3-1.7B-Base", "Qwen/Qwen3-1.7B"),      # model id (Instruct = no -Base suffix)
+        ("Qwen3-1.7B-Base", "Qwen3-1.7B-Instruct"),        # remaining title/comment mentions
+        ("oc14-sft-qwen3-base", "oc14-sft-qwen3-instruct"),
+        ("1.7b-base-sft-lora", "1.7b-instruct-sft-lora"),
+    ]
+    out = []
+    for kind, src in cells:
+        for a, b in reps:
+            src = src.replace(a, b)
+        out.append((kind, src))
+    return out
+
+
+# --- Merge the SFT (Base) adapter to 16-bit weights (for vLLM serving) ---
+MERGE_CELLS = [
+    ("md", """# OC14 — Merge the SFT (Base) adapter → 16-bit weights
+
+Loads the SFT LoRA adapter from the SFT kernel output and writes ordinary 16-bit weights that vLLM
+can serve with no special flags. (The SFT run saved only the adapter; merge happens here.)"""),
+    SFT_CELLS[1],  # cu128 install
+    SFT_CELLS[2],  # pip-freeze lockfile
+    ("code", "import glob, os\n"
+     "ad = glob.glob('/kaggle/input/**/sft_adapter/adapter_config.json', recursive=True)\n"
+     "assert ad, 'SFT adapter not found — attach the SFT kernel as a kernel source'\n"
+     "SFT_ADAPTER_DIR = os.path.dirname(ad[0]); print('SFT_ADAPTER_DIR =', SFT_ADAPTER_DIR)\n"
+     "from unsloth import FastLanguageModel\n"
+     "model, tokenizer = FastLanguageModel.from_pretrained(\n"
+     "    model_name=SFT_ADAPTER_DIR, max_seq_length=2048, load_in_4bit=True)\n"
+     "OUT = '/kaggle/working/sft_merged_16bit'\n"
+     "model.save_pretrained_merged(OUT, tokenizer, save_method='merged_16bit')\n"
+     "files = os.listdir(OUT); print('merged files:', files)\n"
+     "assert any(f.endswith('.safetensors') for f in files), 'merge wrote no weights!'\n"
+     "print('OK: SFT merged 16-bit weights at', OUT)"),
+]
+
+
 if __name__ == "__main__":
     build(SFT_CELLS, HERE / "oc14-sft-lora" / "oc14-sft-lora.ipynb")
     build(EVAL_CELLS, HERE / "oc14-sft-eval" / "oc14-sft-eval.ipynb")
     build(DPO_CELLS, HERE / "oc14-dpo" / "oc14-dpo.ipynb")
+    build(with_instruct(SFT_CELLS), HERE / "oc14-sft-instruct" / "oc14-sft-instruct.ipynb")
+    build(MERGE_CELLS, HERE / "oc14-sft-merge" / "oc14-sft-merge.ipynb")
