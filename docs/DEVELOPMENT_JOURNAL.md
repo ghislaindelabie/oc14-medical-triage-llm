@@ -181,3 +181,18 @@ were near-identical (Base 0.845, Instruct 0.854, ~72–79 min each), so the gap 
 - **Clean test to settle it (future work):** re-run Instruct on its **native** Qwen3 template + a larger eval set.
 - Sources: Ithy (base-vs-instruct), arXiv 2411.02688 (instruction-tuning forgetting), arXiv 2406.14972
   (base vs instruct in RAG), Predibase / HF-forum (chat-template mismatch).
+
+## Follow-ups (2026-06-22) — addressing the confound + the small eval
+**(1) Instruct on its NATIVE template (controls the confound).** New arm `oc14-sft-instruct-native`:
+keeps Qwen3-1.7B-Instruct's **native chat template** (no ChatML override), `enable_thinking=False`
+(Qwen3's non-thinking format = an empty `<think></think>` wrapper, by design — verified locally). This
+isolates "is Base really better?" from "did we mistreat Instruct?" Result to be added once it + its eval
+(`oc14-instruct-native-eval`) complete.
+
+**(2) Larger eval set — solved.** `syntech-ai/medical-triage-500` (CC-BY-NC, **n=500**, synthetic, English,
+never trained on) has a clean 3-class label that maps 1:1 to ours:
+`immediate (230) → urgence maximale · urgent (195) → urgence modérée · routine (75) → urgence différée`
+(its `risk_level` high/medium/low mirrors it). This gives a statistically meaningful held-out triage eval
+(with per-class recall + confusion matrix), replacing the n=6 sanity check. **Caveats:** English-only (so
+it tests cross-lingual generalisation of an FR-heuristic-trained model) and synthetic. Loads via pandas
+(`hf_hub_download` the `.jsonl`; the HF auto-loader errors on its mixed schema). Eval harness to be built next.
