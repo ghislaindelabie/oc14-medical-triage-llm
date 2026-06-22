@@ -188,8 +188,8 @@ held-out hand-labelled triage vignettes. Small set (6) — a sanity check, not t
      "print('eos:', tokenizer.eos_token, '| im_end id:', IM_END)\n"
      "def gen(system, user):\n"
      "    msgs = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]\n"
-     "    ids = tokenizer.apply_chat_template(msgs, add_generation_prompt=True, return_tensors='pt'\n"
-     "                                        ).to(model.device)\n"
+     "    ids = tokenizer.apply_chat_template(msgs, add_generation_prompt=True, enable_thinking=False,\n"
+     "                                        return_tensors='pt').to(model.device)\n"
      "    out = model.generate(input_ids=ids, max_new_tokens=256, do_sample=True,\n"
      "                         temperature=0.3, top_p=0.9, repetition_penalty=1.1,\n"
      "                         eos_token_id=STOP_IDS)\n"
@@ -339,11 +339,51 @@ can serve with no special flags. (The SFT run saved only the adapter; merge happ
 ]
 
 
+def with_instruct_native(cells):
+    """Instruct arm using the model's NATIVE chat template (no override) — controls the
+    template-mismatch confound from the first Instruct run. Replaces the data + gen cells."""
+    cells = list(with_instruct(cells))
+    cells[6] = ("code", "import glob\n"
+                "# KEEP the Instruct model's native chat template (do NOT override) to avoid the\n"
+                "# template-mismatch degradation. enable_thinking=False = Qwen3 non-thinking format.\n"
+                "print('native chat_template present:', tokenizer.chat_template is not None)\n"
+                "print('inputs:', os.listdir('/kaggle/input') if os.path.isdir('/kaggle/input') else 'NONE')\n"
+                "_hits = glob.glob('/kaggle/input/**/sft_train.jsonl', recursive=True)\n"
+                "assert _hits, 'sft_train.jsonl not found under /kaggle/input'\n"
+                "DATA_DIR = os.path.dirname(_hits[0]); print('DATA_DIR =', DATA_DIR)\n"
+                "from datasets import load_dataset\n"
+                "ds = load_dataset('json', data_files={\n"
+                "    'train': f'{DATA_DIR}/sft_train.jsonl', 'val': f'{DATA_DIR}/sft_val.jsonl'})\n"
+                "def to_text(ex):\n"
+                "    return {'text': tokenizer.apply_chat_template(ex['messages'], tokenize=False,\n"
+                "                                                  add_generation_prompt=False, enable_thinking=False)}\n"
+                "ds = ds.map(to_text, remove_columns=ds['train'].column_names)\n"
+                "print(ds)\n"
+                "print(ds['train'][0]['text'][:600])")
+    cells[10] = ("code", "FastLanguageModel.for_inference(model)\n"
+                 "IM_END = tokenizer.convert_tokens_to_ids('<|im_end|>')\n"
+                 "SYS = \"Tu es un assistant de triage médical du CHSA. Donne le niveau d'urgence, \"\\\n"
+                 "      \"une justification et une recommandation.\"\n"
+                 "for q in ['Un patient de 60 ans a une douleur thoracique aiguë avec sueurs depuis 20 min.',\n"
+                 "          'A 30-year-old has mild seasonal allergies and itchy eyes. What do you advise?']:\n"
+                 "    msgs = [{'role': 'system', 'content': SYS}, {'role': 'user', 'content': q}]\n"
+                 "    ids = tokenizer.apply_chat_template(msgs, add_generation_prompt=True, enable_thinking=False,\n"
+                 "                                        return_tensors='pt').to(model.device)\n"
+                 "    out = model.generate(input_ids=ids, max_new_tokens=220, do_sample=True, temperature=0.3,\n"
+                 "                         top_p=0.9, repetition_penalty=1.1, eos_token_id=[IM_END, tokenizer.eos_token_id])\n"
+                 "    print('Q:', q)\n"
+                 "    print(tokenizer.decode(out[0][ids.shape[1]:], skip_special_tokens=True))\n"
+                 "    print('-' * 70)")
+    return cells
+
+
 if __name__ == "__main__":
     build(SFT_CELLS, HERE / "oc14-sft-lora" / "oc14-sft-lora.ipynb")
+    build(with_instruct_native(SFT_CELLS), HERE / "oc14-sft-instruct-native" / "oc14-sft-instruct-native.ipynb")
     build(EVAL_CELLS, HERE / "oc14-sft-eval" / "oc14-sft-eval.ipynb")
     build(DPO_CELLS, HERE / "oc14-dpo" / "oc14-dpo.ipynb")
     build(with_instruct(SFT_CELLS), HERE / "oc14-sft-instruct" / "oc14-sft-instruct.ipynb")
     build(MERGE_CELLS, HERE / "oc14-sft-merge" / "oc14-sft-merge.ipynb")
     # Same eval cells; the kernel-metadata decides which model (via kernel_sources) gets scored.
     build(EVAL_CELLS, HERE / "oc14-instruct-eval" / "oc14-instruct-eval.ipynb")
+    build(EVAL_CELLS, HERE / "oc14-instruct-native-eval" / "oc14-instruct-native-eval.ipynb")
