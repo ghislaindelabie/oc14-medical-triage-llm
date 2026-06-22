@@ -186,8 +186,24 @@ were near-identical (Base 0.845, Instruct 0.854, ~72–79 min each), so the gap 
 **(1) Instruct on its NATIVE template (controls the confound).** New arm `oc14-sft-instruct-native`:
 keeps Qwen3-1.7B-Instruct's **native chat template** (no ChatML override), `enable_thinking=False`
 (Qwen3's non-thinking format = an empty `<think></think>` wrapper, by design — verified locally). This
-isolates "is Base really better?" from "did we mistreat Instruct?" Result to be added once it + its eval
-(`oc14-instruct-native-eval`) complete.
+isolates "is Base really better?" from "did we mistreat Instruct?" (train_loss 0.830.)
+
+**Result (n=6):** Instruct-native scored **0.50** acc, format **0.83**, **1/2** emergencies — up from
+Instruct-ChatML (0.33 / 0.67 / 0/2). So the **template confound was real and material**: roughly half the
+original Base-vs-Instruct gap was the forced ChatML. **But even on its native template, Instruct-SFT
+(0.50, 1/2 emergencies) still trails Base-SFT (0.67, 2/2).** Full table:
+
+| Model | template | urgency acc | emergencies | format | disclaimer |
+|---|---|---|---|---|---|
+| Base SFT | ChatML | **0.67** | **2/2** | 0.83 | 0.83 |
+| Instruct SFT | ChatML (forced) | 0.33 | 0/2 | 0.67 | 0.67 |
+| Instruct SFT | native | 0.50 | 1/2 | 0.83 | 0.67 |
+| Base SFT + DPO | ChatML | 0.33 | 0/2 | 0.83 | 0.67 |
+
+**Refined conclusion:** the Base-over-Instruct claim is **weakly supported** — Base still leads with the
+confound controlled, but the margin (0.67 vs 0.50) is small and within n=6 noise. A firm statement needs
+the n=500 eval (below). Base SFT remains the served deliverable (best measured, only one catching both
+emergencies).
 
 **(2) Larger eval set — solved.** `syntech-ai/medical-triage-500` (CC-BY-NC, **n=500**, synthetic, English,
 never trained on) has a clean 3-class label that maps 1:1 to ours:
