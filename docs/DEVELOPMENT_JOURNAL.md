@@ -164,12 +164,20 @@ All three scored on the **same** 6 held-out hand-labelled vignettes, same correc
 **Base SFT is the best of the three — and the only one that catches both emergencies.** Training losses
 were near-identical (Base 0.845, Instruct 0.854, ~72–79 min each), so the gap is **behavioural**, not fit.
 
-**Reading (honest):**
-- This **supports the brief's choice of Base**: a raw model gives a cleaner SFT signal with no competing
-  instruct priors. We overrode the Instruct model's native chat template with our plain ChatML (for
-  apples-to-apples + non-thinking serving), and its existing alignment likely interfered with the small
-  triage SFT — lowering format adherence and emergency detection.
-- DPO and Instruct-SFT both underperformed Base SFT → **Base SFT remains the served deliverable.**
-- **Caveat:** n=6 is a sanity check, not statistically significant; the direction (Base best, only Base
-  catches emergencies) is suggestive, not definitive. A fuller eval (larger held-out set; optionally the
-  Instruct *native* template) is future work.
+**Reading (honest — corrected after checking the literature):**
+- The result is **consistent with** the brief's Base rationale (clean slate → cleaner SFT signal for a
+  strict custom format; the literature favours Base specifically when a specialised output format is
+  needed), but it is **not proof** — for two reasons:
+  - **Confound:** we trained *and* served the Instruct model with our plain ChatML, **overriding its native
+    template**. Template mismatch is a documented, often-large performance hit for instruct models, so part
+    of the gap is plausibly "we mistreated Instruct," not "Base is inherently better."
+  - **Underpowered:** n=6 → Base 0.67 vs Instruct 0.33 is a **2-vignette** difference, within noise.
+  - Note: the *common* community default is actually that **Instruct is the better starting point**; Base
+    wins mainly for custom-format/neutral cases (which is ours). So our result is in the minority direction
+    → the confound + small-n are the most credible drivers.
+  - The Instruct failures were mostly **format breakdowns** (no parseable urgency level), consistent with
+    its instruct priors reasserting at inference.
+- DPO and Instruct-SFT both underperformed Base SFT → **Base SFT remains the served deliverable** (best measured).
+- **Clean test to settle it (future work):** re-run Instruct on its **native** Qwen3 template + a larger eval set.
+- Sources: Ithy (base-vs-instruct), arXiv 2411.02688 (instruction-tuning forgetting), arXiv 2406.14972
+  (base vs instruct in RAG), Predibase / HF-forum (chat-template mismatch).

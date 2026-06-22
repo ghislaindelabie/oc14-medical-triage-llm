@@ -39,9 +39,12 @@ serving need a GPU.
   **Base is the primary** model we DPO, merge, serve and deploy, **Instruct is the comparison**.
 - **Criterion:** honour the brief while showing the Base-vs-Instruct safety trade-off the mentor/reviewers value.
 - **Empirical result (small eval, 2026-06-20):** **Base SFT (0.67, both emergencies caught) > Instruct SFT
-  (0.33, both missed)** despite near-identical training loss — which **supports the brief's Base choice**
-  (cleaner SFT signal, no competing instruct priors). **Served deliverable = Base SFT.** (n=6; suggestive,
-  not definitive — see `DEVELOPMENT_JOURNAL.md`.)
+  (0.33, both missed)** despite near-identical training loss. This is **consistent with** the brief's Base
+  rationale (clean slate for a strict custom format; the literature favors Base when a specialised output
+  format is needed) — but **not proof**: it is **underpowered (n=6)** and **confounded** — we trained/served
+  Instruct with our plain ChatML, **overriding its native template**, which is a documented performance hit
+  for instruct models. A clean test = Instruct on its **native** template + a larger eval set. **Served
+  deliverable = Base SFT** regardless (it's the best measured). Full analysis in `DEVELOPMENT_JOURNAL.md`.
 
 ## 4. Fine-tuning
 - **SFT (Supervised Fine-Tuning):** show the model good (instruction → response) examples so it learns
