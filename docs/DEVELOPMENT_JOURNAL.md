@@ -212,3 +212,48 @@ never trained on) has a clean 3-class label that maps 1:1 to ours:
 (with per-class recall + confusion matrix), replacing the n=6 sanity check. **Caveats:** English-only (so
 it tests cross-lingual generalisation of an FR-heuristic-trained model) and synthetic. Loads via pandas
 (`hf_hub_download` the `.jsonl`; the HF auto-loader errors on its mixed schema). Eval harness to be built next.
+
+## LLM-consensus triage labelling (2026-06-24) — a real eval-gold + train set
+
+**Problem.** The n=6 sanity eval can't settle Base-vs-Instruct or measure triage skill, and no validated FR
+triage gold exists (no clinician available). **Approach (settled with the user over several turns):** label
+the **3,075 real MediQAl `clinical_case` vignettes** with a **3-model consensus** (OpenAI `gpt-5.4`,
+Mistral `medium-3.5`, Anthropic `claude-sonnet-4-6`), each returning a **3-level urgency + ESI 1-5 in one
+call** against a cited rubric (`docs/TRIAGE_CRITERIA.md`). Rationale: MCQA≠triage; LLM-as-annotator is a
+**silver standard** (not gold); grounding via a rubric-in-prompt (full-RAG overkill for 3 levels); label
+real cases rather than generate them; teacher(grounded LLMs)→student(no-RAG Qwen3) distillation.
+
+**Method choices that mattered.** (a) **Rubric → cached system prefix.** Expanded to ~2 pages (2,817
+Anthropic tokens: worked example/level, MTS presentation discriminators, atypical-presentation pitfalls,
+the ESI 4-decision-point algorithm, vital danger zones, over-triage + non-clinical rules) and moved into
+the `system` message so it's a byte-stable prefix → **prompt-cached** (OpenAI auto ≥1024; Anthropic
+`cache_control` ≥2048; Mistral REST uncached). Counter-intuitive: a bigger *cached* rubric is barely more
+expensive than the lean uncached one, since the two priciest providers read it at ~0.1×. (b) **Vanilla
+SDKs/REST, not LangChain** — no orchestration; the `mistralai` 2.5.0 SDK imports empty, so Mistral goes via
+plain `urllib` REST. (c) Pipeline is **concurrent** (thread pool), **resumable** (skips labelled case_ids),
+**cache-aware** in cost accounting. (d) **Sample-first gate:** a paid 200-case sample measured real cost +
+caching + κ before committing the full run.
+
+**Results (all 3,075 × 3 models).** Fleiss **κ ≈ 0.67 — *substantial* inter-model agreement** (0.678 on the
+200 sample, 0.667 on the full run); the n=3 live-test κ≈0 was small-sample noise. **1,603 unanimous +
+ESI-consistent gold (52%)**, urgency mix maximale 995 / modérée 452 / différée 156 (skews *maximale* — the
+over-triage default + MediQAl's sick teaching vignettes). ~838 (27%) excluded as non-clinical by consensus
+(279 unanimous). **Caching confirmed:** OpenAI 73% / Anthropic 91% of input tokens served from cache.
+**Total cost $36.67** (sample $2.53 + full $34.14) — *under* the $38.90 extrapolation, as the hit-rate
+improved at scale. gpt-5.4 emitted ~81 output tok/call (no reasoning-token blow-up).
+
+**Deliverable.** `build` → **`data/processed/triage_eval_gold.jsonl`** (300 held-out gold: case +
+gold_urgency + gold_esi) and **`triage_sft_train.jsonl`** (2,496 rows = leftover gold + majority cases,
+rendered in the triage response structure). A statistically meaningful, κ-backed eval set — what the n=6
+check could not be.
+
+**Honest limitations for the report.** Silver standard, not clinical validation. LLM↔clinician triage
+agreement is only *moderate* in the literature; mitigated via consensus + clear-case gold + over-triage.
+Source cases are real French *exam* vignettes (good provenance, exam-style). Gold is class-imbalanced toward
+*maximale* (stratified eval-gold is an open refinement).
+
+**Next.** Retrain SFT (Base) on the LLM-labelled train set; eval on the 300 gold (per-class recall +
+confusion matrix). Then a fair **second DPO attempt** with **triage preference pairs** (chosen = safer
+consensus, rejected = an under-triaged answer — flagged-disagreement cases are a natural source). This
+addresses the earlier DPO failure, whose root cause was **off-task data composition** (~99% UltraMedical
+verbosity vs 11 triage/safety pairs), **not** insufficient pair count.
