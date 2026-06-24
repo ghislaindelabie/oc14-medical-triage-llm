@@ -250,7 +250,15 @@ check could not be.
 **Honest limitations for the report.** Silver standard, not clinical validation. LLM↔clinician triage
 agreement is only *moderate* in the literature; mitigated via consensus + clear-case gold + over-triage.
 Source cases are real French *exam* vignettes (good provenance, exam-style). Gold is class-imbalanced toward
-*maximale* (stratified eval-gold is an open refinement).
+*maximale* (47% of the triaged pool / 62% of gold, vs ~25–30% in a real ED) — **but an over-triage ablation
+(n=100, relabelled with the tie-breaker removed) shifted the *maximale* rate only ~2 pp (50%→48%; 5/100
+cases changed level), so the skew is corpus-driven (MediQAl exam vignettes over-represent serious pathology),
+not a rubric-caution artifact** — consistent with the genuinely-critical gold cases, 3-model agreement, and
+the near-identical skew in the independent `medical-triage-500` (46% immediate). A production system would
+need a representative, prospectively-collected ED triage dataset; ours is a defensible PoC proxy. **Mitigation
+in place:** eval-gold is **stratified 100/100/100** with **macro-F1** as the headline metric (raw accuracy is
+gameable by over-predicting *maximale*); the *training* set is kept natural for the first SFT retrain
+(under-triage is the more dangerous error), to be measured on the eval and rebalanced only if a class collapses.
 
 **Next.** Retrain SFT (Base) on the LLM-labelled train set; eval on the 300 gold (per-class recall +
 confusion matrix). Then a fair **second DPO attempt** with **triage preference pairs** (chosen = safer
