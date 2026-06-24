@@ -1,37 +1,53 @@
 """Thin, uniform wrappers over OpenAI / Mistral / Anthropic + a MockClient for tests.
 
-Each client: a `.name` and `.complete(system, user) -> str`. SDKs are imported lazily inside
-`complete()`, so importing this module (and using MockClient) needs no SDKs and no keys.
-Model ids are env-overridable; defaults are mid-tier-strong (cheap). Bump to frontier via env
-for the eval-gold pass. The orchestrator uses whichever providers have a key set.
+Each client exposes `.name`, `.complete(system, user) -> str`, and token-usage counters
+(`.in_tok`, `.out_tok`, `.calls`) accumulated thread-safely so a run can report real cost.
+SDKs are imported lazily inside `complete()`, so importing this module (and using MockClient)
+needs no SDKs and no keys. Model ids are env-overridable via OC14_<PROVIDER>_MODEL.
 """
 
 from __future__ import annotations
 
 import os
+import threading
 
-# Model ids are read from env (OC14_<PROVIDER>_MODEL) at instantiation, i.e. AFTER .env is loaded.
 _DEFAULT_MODEL = {"openai": "gpt-4o-mini", "mistral": "mistral-small-latest",
                   "anthropic": "claude-3-5-haiku-latest"}
 
 
-class OpenAIClient:
+class _Usage:
+    """Mixin: thread-safe token accounting shared by the real provider clients."""
+
+    def _init_usage(self) -> None:
+        self.in_tok = self.out_tok = self.calls = 0
+        self._lock = threading.Lock()
+
+    def _add_usage(self, in_tok, out_tok) -> None:
+        with self._lock:
+            self.in_tok += int(in_tok or 0)
+            self.out_tok += int(out_tok or 0)
+            self.calls += 1
+
+
+class OpenAIClient(_Usage):
     name = "openai"
 
     def __init__(self, model: str | None = None):
         self.model = model or os.environ.get("OC14_OPENAI_MODEL", _DEFAULT_MODEL["openai"])
+        self._init_usage()
 
     def complete(self, system: str, user: str) -> str:
         from openai import OpenAI  # lazy
-        client = OpenAI()  # reads OPENAI_API_KEY
-        r = client.chat.completions.create(
+        r = OpenAI().chat.completions.create(
             model=self.model, temperature=0,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         )
+        u = r.usage
+        self._add_usage(getattr(u, "prompt_tokens", 0), getattr(u, "completion_tokens", 0))
         return r.choices[0].message.content or ""
 
 
-class MistralClient:
+class MistralClient(_Usage):
     """Mistral via its REST endpoint (stdlib urllib) — the `mistralai` SDK (2.5.0) imports as an
     empty namespace package, so we skip it. The API is OpenAI-compatible."""
 
@@ -40,35 +56,54 @@ class MistralClient:
 
     def __init__(self, model: str | None = None):
         self.model = model or os.environ.get("OC14_MISTRAL_MODEL", _DEFAULT_MODEL["mistral"])
+        self._init_usage()
 
     def complete(self, system: str, user: str) -> str:
         import json
+        import time
+        import urllib.error
         import urllib.request
         body = json.dumps({
             "model": self.model, "temperature": 0,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         }).encode("utf-8")
-        req = urllib.request.Request(self.URL, data=body, headers={
-            "Authorization": f"Bearer {os.environ['MISTRAL_API_KEY']}",
-            "Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            d = json.loads(resp.read())
+        last: Exception | None = None
+        for attempt in range(4):  # urllib has no retry of its own; back off on 429/5xx
+            req = urllib.request.Request(self.URL, data=body, headers={
+                "Authorization": f"Bearer {os.environ['MISTRAL_API_KEY']}",
+                "Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    d = json.loads(resp.read())
+                break
+            except urllib.error.HTTPError as e:
+                last = e
+                if e.code in (429, 500, 502, 503, 529) and attempt < 3:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise
+        else:  # pragma: no cover — loop always breaks or raises
+            raise last  # type: ignore[misc]
+        u = d.get("usage", {})
+        self._add_usage(u.get("prompt_tokens", 0), u.get("completion_tokens", 0))
         return d["choices"][0]["message"]["content"] or ""
 
 
-class AnthropicClient:
+class AnthropicClient(_Usage):
     name = "anthropic"
 
     def __init__(self, model: str | None = None):
         self.model = model or os.environ.get("OC14_ANTHROPIC_MODEL", _DEFAULT_MODEL["anthropic"])
+        self._init_usage()
 
     def complete(self, system: str, user: str) -> str:
         import anthropic  # lazy
-        client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
-        r = client.messages.create(
+        r = anthropic.Anthropic().messages.create(
             model=self.model, max_tokens=512, temperature=0,
             system=system, messages=[{"role": "user", "content": user}],
         )
+        u = r.usage
+        self._add_usage(getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0))
         return "".join(getattr(b, "text", "") for b in r.content)
 
 
@@ -80,6 +115,7 @@ class MockClient:
         self._answers = answer if isinstance(answer, list) else None
         self._fixed = answer if isinstance(answer, str) else None
         self._i = 0
+        self.in_tok = self.out_tok = self.calls = 0
 
     def complete(self, system: str, user: str) -> str:
         if self._fixed is not None:
@@ -91,6 +127,9 @@ class MockClient:
 
 _KEY_ENV = {"openai": "OPENAI_API_KEY", "mistral": "MISTRAL_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
 _CTORS = {"openai": OpenAIClient, "mistral": MistralClient, "anthropic": AnthropicClient}
+
+# Sync $/1M tokens (input, output) for the configured frontier models — for cost reporting only.
+PRICES = {"openai": (2.50, 15.00), "mistral": (1.50, 7.50), "anthropic": (3.00, 15.00)}
 
 
 def available_clients() -> list:

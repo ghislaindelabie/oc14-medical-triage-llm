@@ -14,6 +14,8 @@ import argparse
 import json
 import random
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dotenv import load_dotenv
 
@@ -21,7 +23,7 @@ from ..config import PROCESSED, ROOT, SEED
 from ..data.templates import RECO, chat_example, triage_response
 from .aggregate import Aggregate, Label, consensus, parse_label
 from .cases import load_mcqu_questions, load_triage_cases
-from .clients import MockClient, available_clients, missing_keys
+from .clients import PRICES, MockClient, available_clients, missing_keys
 from .rubric import SYSTEM_PROMPT, build_user_prompt
 
 LABELED = PROCESSED / "triage_labeled.jsonl"
@@ -48,6 +50,34 @@ def _mock_clients() -> list:
     ]
 
 
+def _label_one(clients, case) -> tuple:
+    """Call every client on one case and return (case, consensus). Thread-pool worker."""
+    labels: list[Label] = []
+    for cl in clients:
+        try:
+            raw = cl.complete(SYSTEM_PROMPT, build_user_prompt(case["text"]))
+            labels.append(parse_label(cl.name, raw))
+        except Exception as e:  # noqa: BLE001 — record + continue (one bad call ≠ abort)
+            labels.append(Label(cl.name, False, None, None, False, error=str(e)[:120]))
+    return case, consensus(case["case_id"], labels)
+
+
+def _print_cost(clients, n_cases) -> None:
+    total = 0.0
+    for cl in clients:
+        price = PRICES.get(cl.name)
+        if not price or not getattr(cl, "calls", 0):
+            continue
+        cost = cl.in_tok / 1e6 * price[0] + cl.out_tok / 1e6 * price[1]
+        total += cost
+        print(f"  {cl.name}[{cl.model}]: {cl.calls} calls, in={cl.in_tok:,} out={cl.out_tok:,} "
+              f"-> ${cost:.2f}")
+    if total and n_cases:
+        print(f"  MEASURED sync cost this run ({n_cases} cases): ${total:.2f}")
+        print(f"  -> extrapolated to 3,075: ${total * 3075 / n_cases:.2f} sync "
+              f"/ ${total * 3075 / n_cases / 2:.2f} batch")
+
+
 def cmd_label(args) -> None:
     cases = load_triage_cases(limit=args.limit)
     print(f"loaded {len(cases)} triage cases")
@@ -59,29 +89,37 @@ def cmd_label(args) -> None:
     if not clients:
         raise SystemExit(f"No API keys set ({', '.join(missing_keys())}). Use --mock or set keys.")
     print(f"clients: {[c.name for c in clients]}")
-    agg = Aggregate()
     PROCESSED.mkdir(parents=True, exist_ok=True)
-    with open(LABELED, "w", encoding="utf-8") as fh:
-        for i, c in enumerate(cases):
-            labels: list[Label] = []
-            for cl in clients:
-                try:
-                    raw = cl.complete(SYSTEM_PROMPT, build_user_prompt(c["text"]))
-                    labels.append(parse_label(cl.name, raw))
-                except Exception as e:  # noqa: BLE001 — record + continue (one bad call ≠ abort)
-                    labels.append(Label(cl.name, False, None, None, False, error=str(e)[:120]))
-            con = consensus(c["case_id"], labels)
-            agg.consensuses.append(con)
-            fh.write(json.dumps({
-                "case_id": c["case_id"], "text": c["text"],
-                "urgency": con.urgency, "esi": con.esi, "unanimous": con.unanimous,
-                "is_gold": con.is_gold, "flagged": con.flagged,
-                "labels": [vars(x) for x in con.labels],
-            }, ensure_ascii=False) + "\n")
-            if (i + 1) % 100 == 0:
-                print(f"  {i + 1}/{len(cases)} labelled")
+
+    done: set[str] = set()
+    mode = "w"
+    if LABELED.exists() and not args.fresh:  # resume — skip already-labelled cases, append
+        done = {json.loads(x)["case_id"] for x in LABELED.read_text(encoding="utf-8").split("\n") if x.strip()}
+        mode = "a"
+    todo = [c for c in cases if c["case_id"] not in done]
+    if done:
+        print(f"resume: {len(done)} already labelled, {len(todo)} to go")
+
+    agg = Aggregate()
+    wlock = threading.Lock()
+    n = 0
+    with open(LABELED, mode, encoding="utf-8") as fh, ThreadPoolExecutor(max_workers=args.workers) as ex:
+        for fut in as_completed([ex.submit(_label_one, clients, c) for c in todo]):
+            c, con = fut.result()
+            with wlock:
+                agg.consensuses.append(con)
+                fh.write(json.dumps({
+                    "case_id": c["case_id"], "text": c["text"],
+                    "urgency": con.urgency, "esi": con.esi, "unanimous": con.unanimous,
+                    "is_gold": con.is_gold, "flagged": con.flagged,
+                    "labels": [vars(x) for x in con.labels],
+                }, ensure_ascii=False) + "\n")
+                n += 1
+                if n % 50 == 0:
+                    print(f"  {n}/{len(todo)} labelled")
     REPORT.write_text(json.dumps(agg.report(), indent=2, ensure_ascii=False))
-    print("report:", json.dumps(agg.report(), ensure_ascii=False))
+    print("report (this run):", json.dumps(agg.report(), ensure_ascii=False))
+    _print_cost(clients, len(todo))
 
 
 def cmd_build(args) -> None:
@@ -152,6 +190,8 @@ def main() -> None:
     p_label.add_argument("--limit", type=int)
     p_label.add_argument("--mock", action="store_true")
     p_label.add_argument("--dry-run", action="store_true")
+    p_label.add_argument("--workers", type=int, default=12, help="concurrent cases")
+    p_label.add_argument("--fresh", action="store_true", help="ignore existing labels, relabel from scratch")
     p_label.set_defaults(func=cmd_label)
 
     p_build = sub.add_parser("build")
