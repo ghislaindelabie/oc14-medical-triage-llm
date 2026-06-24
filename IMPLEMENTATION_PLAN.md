@@ -34,9 +34,12 @@ state*. Triage is the central task (not medical Q&A); `.md` is the source of tru
 - ✅ **SFT merged to 16-bit** (`models/sft-base-merged-16bit/`, 3.3 GB) — the vLLM-servable model.
 - ✅ **Instruct comparison arm trained + eval'd** (2026-06-20): Instruct SFT **0.33** (missed both emergencies) vs **Base SFT 0.67** (both caught), near-identical train loss → **Base wins, validates the brief's Base choice**. Base SFT stays the deliverable.
 
-**Not yet:**
+- ✅ **Multi-LLM triage-labelling pipeline built + key-free tested** (`src/oc14_triage/labeling/`, `docs/TRIAGE_CRITERIA.md`): cited rubric → 3 LLMs label real MediQAl vignettes (3-level + ESI/call) → consensus + Fleiss κ + MCQU calibration; `label`/`build`/`calibrate` CLIs; 28 tests, ruff clean, mock end-to-end OK. **Waiting on:** 3 API keys + tier/size confirm → calibrate → label 3,075 → retrain SFT on LLM labels → eval gold (~300).
+
+**Not yet (the "fuller eval" triad):**
+- ⬜ Option 1: FedMML reference-dataset check. Option 2: `medical-triage-500` ablation. Option 3: run the LLM-labelling pipeline above (needs keys).
 - ⬜ Serving: vLLM (**RunPod or Modal** — user deciding) + FastAPI wrapper on the merged SFT model; CI deploy step.
-- ⬜ Fuller eval (larger held-out set); Presidio pass; report.
+- ⬜ Presidio pass; report.
 - ⬜ HF publish (dataset + SFT weights) — **deferred until user's full review**; pushable from P710 (weights local, `HF_TOKEN` set).
 - ⬜ Merge + offline vLLM verify + push to HF.
 - ⬜ Serving: RunPod serverless (stock worker-vllm) + thin FastAPI safety wrapper.
