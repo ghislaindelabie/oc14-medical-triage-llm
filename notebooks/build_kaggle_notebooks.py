@@ -152,12 +152,14 @@ def build(cells, path: Path):
 
 # --- Quick eval notebook: correct inference (stop on <|im_end|>, trained system prompt) ---
 EVAL_CELLS = [
-    ("md", """# OC14 — Quick eval of the SFT (Base) model
+    ("md", """# OC14 — Eval of the SFT (Base) model on the 300-case LLM-consensus gold
 
 Loads the LoRA adapter from the SFT kernel's output and generates with the **correct**
 inference config: stop on `<|im_end|>` (the small model otherwise runs past the answer into
 repetition), and the **exact trained system prompt** (read back from the dataset). Scores the
-held-out hand-labelled triage vignettes. Small set (6) — a sanity check, not the final eval."""),
+**300-case stratified eval-gold** (`triage_eval_gold.jsonl`, 100/100/100, 3-model consensus).
+Headline = **macro-F1** (robust to the maximale-skewed class prior) + **maximale recall** (safety)
++ a confusion matrix."""),
     SFT_CELLS[1],  # identical cu128 install
     SFT_CELLS[2],  # pip-freeze lockfile
     ("code", "import glob, os, json\n"
@@ -200,27 +202,51 @@ held-out hand-labelled triage vignettes. Small set (6) — a sanity check, not t
      "    return min(hits)[1] if hits else None\n"
      "def has_disclaimer(t):\n"
      "    low = t.lower(); return ('ne remplace pas' in low) or ('does not replace' in low)\n"
-     "# Held-out hand-labelled vignettes (from vignettes.py, split='eval').\n"
-     "VIGN = [\n"
-     "  ('fr', 'Homme de 60 ans, malaise avec perte de connaissance brève et pâleur intense.', 'urgence maximale'),\n"
-     "  ('fr', 'Adolescent, mal de gorge et fièvre légère depuis hier, sans difficulté à avaler.', 'urgence modérée'),\n"
-     "  ('fr', 'Femme de 35 ans, demande de certificat médical pour le sport.', 'urgence différée'),\n"
-     "  ('en', '50-year-old, sudden worst-ever headache with vomiting and neck stiffness.', 'urgence maximale'),\n"
-     "  ('en', '27-year-old with mild ankle pain after jogging, able to walk.', 'urgence modérée'),\n"
-     "  ('en', '40-year-old asking how to renew a stable long-term prescription.', 'urgence différée'),\n"
-     "]\n"
-     "res = []\n"
-     "for lang, user, gold in VIGN:\n"
-     "    txt = gen(SYS.get(lang, 'You are a medical triage assistant.'), user)\n"
-     "    pred = extract_urgency(txt)\n"
-     "    res.append((lang, gold, pred, has_disclaimer(txt), txt))\n"
-     "    print(f'[{lang}] gold={gold} | pred={pred}')\n"
-     "    print('  ' + txt.replace(chr(10), ' ')[:300]); print('-' * 70)\n"
-     "n = len(res)\n"
-     "acc = sum(g == p for _, g, p, _, _ in res) / n\n"
-     "fmt = sum(p is not None for _, _, p, _, _ in res) / n\n"
-     "disc = sum(d for *_, d, _ in res) / n\n"
-     "print(f'\\n=== n={n} | urgency_accuracy={acc:.2f} | format_rate={fmt:.2f} | disclaimer_rate={disc:.2f}')"),
+     "# --- inlined triage_report (mirror of src/oc14_triage/eval/metrics.py) ---\n"
+     "def triage_report(pairs):\n"
+     "    from collections import Counter\n"
+     "    pairs = [(p, g) for p, g in pairs if g in LEVELS]; n = len(pairs)\n"
+     "    if not n:\n"
+     "        return {'n': 0}\n"
+     "    conf = Counter((g, p) for p, g in pairs); rec, prec, f1 = {}, {}, {}\n"
+     "    for lv in LEVELS:\n"
+     "        ng = sum(g == lv for p, g in pairs); npr = sum(p == lv for p, g in pairs)\n"
+     "        tp = sum(p == lv for p, g in pairs if g == lv)\n"
+     "        rec[lv] = round(tp/ng, 3) if ng else None\n"
+     "        prec[lv] = round(tp/npr, 3) if npr else None\n"
+     "        r_, p_ = rec[lv], prec[lv]\n"
+     "        f1[lv] = round(2*p_*r_/(p_+r_), 3) if (p_ and r_) else (0.0 if (p_ == 0 or r_ == 0) else None)\n"
+     "    present = [lv for lv in LEVELS if any(g == lv for p, g in pairs)]\n"
+     "    macro = lambda d: round(sum(d[lv] or 0 for lv in present)/len(present), 3) if present else None\n"
+     "    out = {'n': n, 'accuracy': round(sum(p == g for p, g in pairs)/n, 3),\n"
+     "           'recall_per_level': rec, 'precision_per_level': prec, 'f1_per_level': f1,\n"
+     "           'macro_recall': macro(rec), 'macro_precision': macro(prec), 'macro_f1': macro(f1),\n"
+     "           'recall_urgence_maximale': rec['urgence maximale'],\n"
+     "           'confusion_gold_pred': {f'{g}->{p}': c for (g, p), c in sorted(conf.items())}}\n"
+     "    try:\n"
+     "        from sklearn.metrics import cohen_kappa_score\n"
+     "        out['cohen_kappa'] = round(cohen_kappa_score([g for p, g in pairs], [p for p, g in pairs], labels=list(LEVELS)), 3)\n"
+     "    except Exception:\n"
+     "        out['cohen_kappa'] = None\n"
+     "    return out\n"
+     "gp = glob.glob('/kaggle/input/**/triage_eval_gold.jsonl', recursive=True)\n"
+     "assert gp, 'triage_eval_gold.jsonl not found — version the dataset with the gold file'\n"
+     "gold = [json.loads(l) for l in open(gp[0], encoding='utf-8').read().split('\\n') if l.strip()]\n"
+     "print('eval-gold:', len(gold), 'cases')\n"
+     "SYSFR = SYS.get('fr') or 'Tu es un assistant de triage médical.'\n"
+     "pairs, beh = [], []\n"
+     "for i, r in enumerate(gold):\n"
+     "    txt = gen(SYSFR, r['user']); pred = extract_urgency(txt)\n"
+     "    pairs.append((pred, r['gold_urgency']))\n"
+     "    beh.append((has_disclaimer(txt), pred is not None, '<think>' not in txt.lower()))\n"
+     "    if (i + 1) % 50 == 0:\n"
+     "        print(f'  {i + 1}/{len(gold)} generated')\n"
+     "rep = triage_report(pairs)\n"
+     "print('\\n=== TRIAGE REPORT on the 300-case gold (macro_f1 = headline) ===')\n"
+     "print(json.dumps(rep, ensure_ascii=False, indent=2))\n"
+     "nb = len(beh) or 1\n"
+     "print('behavioural: disclaimer=%.2f format=%.2f no_think=%.2f' % (\n"
+     "    sum(b[0] for b in beh)/nb, sum(b[1] for b in beh)/nb, sum(b[2] for b in beh)/nb))"),
 ]
 
 
