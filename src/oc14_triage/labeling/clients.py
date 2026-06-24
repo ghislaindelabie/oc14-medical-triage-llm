@@ -16,17 +16,27 @@ _DEFAULT_MODEL = {"openai": "gpt-4o-mini", "mistral": "mistral-small-latest",
 
 
 class _Usage:
-    """Mixin: thread-safe token accounting shared by the real provider clients."""
+    """Mixin: thread-safe, cache-aware token accounting shared by the real provider clients.
+
+    in_full = uncached input (full price); in_cread = cache reads (~0.1x);
+    in_cwrite = cache writes (~1.25x, Anthropic only); out_tok = output.
+    """
 
     def _init_usage(self) -> None:
-        self.in_tok = self.out_tok = self.calls = 0
+        self.in_full = self.in_cread = self.in_cwrite = self.out_tok = self.calls = 0
         self._lock = threading.Lock()
 
-    def _add_usage(self, in_tok, out_tok) -> None:
+    def _add_usage(self, in_full, out, cread=0, cwrite=0) -> None:
         with self._lock:
-            self.in_tok += int(in_tok or 0)
-            self.out_tok += int(out_tok or 0)
+            self.in_full += int(in_full or 0)
+            self.in_cread += int(cread or 0)
+            self.in_cwrite += int(cwrite or 0)
+            self.out_tok += int(out or 0)
             self.calls += 1
+
+    @property
+    def in_tok(self) -> int:  # total input across all tiers (for display)
+        return self.in_full + self.in_cread + self.in_cwrite
 
 
 class OpenAIClient(_Usage):
@@ -43,7 +53,9 @@ class OpenAIClient(_Usage):
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         )
         u = r.usage
-        self._add_usage(getattr(u, "prompt_tokens", 0), getattr(u, "completion_tokens", 0))
+        cached = getattr(getattr(u, "prompt_tokens_details", None), "cached_tokens", 0) or 0
+        self._add_usage((getattr(u, "prompt_tokens", 0) or 0) - cached,
+                        getattr(u, "completion_tokens", 0), cread=cached)
         return r.choices[0].message.content or ""
 
 
@@ -100,10 +112,16 @@ class AnthropicClient(_Usage):
         import anthropic  # lazy
         r = anthropic.Anthropic().messages.create(
             model=self.model, max_tokens=512, temperature=0,
-            system=system, messages=[{"role": "user", "content": user}],
+            # cache the (stable) rubric prefix; no-op below the model's min cacheable size.
+            system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": user}],
         )
         u = r.usage
-        self._add_usage(getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0))
+        self._add_usage(
+            getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0),
+            cread=getattr(u, "cache_read_input_tokens", 0) or 0,
+            cwrite=getattr(u, "cache_creation_input_tokens", 0) or 0,
+        )
         return "".join(getattr(b, "text", "") for b in r.content)
 
 
@@ -115,7 +133,7 @@ class MockClient:
         self._answers = answer if isinstance(answer, list) else None
         self._fixed = answer if isinstance(answer, str) else None
         self._i = 0
-        self.in_tok = self.out_tok = self.calls = 0
+        self.in_full = self.in_cread = self.in_cwrite = self.in_tok = self.out_tok = self.calls = 0
 
     def complete(self, system: str, user: str) -> str:
         if self._fixed is not None:

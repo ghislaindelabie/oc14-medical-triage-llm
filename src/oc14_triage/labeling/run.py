@@ -68,12 +68,15 @@ def _print_cost(clients, n_cases) -> None:
         price = PRICES.get(cl.name)
         if not price or not getattr(cl, "calls", 0):
             continue
-        cost = cl.in_tok / 1e6 * price[0] + cl.out_tok / 1e6 * price[1]
+        pin, pout = price
+        cost = (cl.in_full * pin + cl.in_cread * pin * 0.1 + cl.in_cwrite * pin * 1.25
+                + cl.out_tok * pout) / 1e6
         total += cost
-        print(f"  {cl.name}[{cl.model}]: {cl.calls} calls, in={cl.in_tok:,} out={cl.out_tok:,} "
-              f"-> ${cost:.2f}")
+        cache = f", cached_read={cl.in_cread:,}" if cl.in_cread else " (no cache hit)"
+        print(f"  {cl.name}[{cl.model}]: {cl.calls} calls, in={cl.in_tok:,}{cache} "
+              f"out={cl.out_tok:,} -> ${cost:.2f}")
     if total and n_cases:
-        print(f"  MEASURED sync cost this run ({n_cases} cases): ${total:.2f}")
+        print(f"  MEASURED cost this run ({n_cases} cases): ${total:.2f}")
         print(f"  -> extrapolated to 3,075: ${total * 3075 / n_cases:.2f} sync "
               f"/ ${total * 3075 / n_cases / 2:.2f} batch")
 
@@ -82,8 +85,9 @@ def cmd_label(args) -> None:
     cases = load_triage_cases(limit=args.limit)
     print(f"loaded {len(cases)} triage cases")
     if args.dry_run:
-        for c in cases[:2]:
-            print("\n----- PROMPT -----\n" + build_user_prompt(c["text"])[:1400])
+        print("\n===== SYSTEM (rubric, cached prefix) =====\n" + SYSTEM_PROMPT)
+        for c in cases[:1]:
+            print("\n===== USER (per-case) =====\n" + build_user_prompt(c["text"]))
         return
     clients = _mock_clients() if args.mock else available_clients()
     if not clients:

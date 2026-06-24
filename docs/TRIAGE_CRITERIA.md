@@ -1,12 +1,21 @@
 # OC14 — Triage criteria (the medical core to review)
 
 > **Status:** intermediary, 2026-06-24. **Review this first** — the entire triage dataset (training +
-> eval gold) rests on these criteria. Canonical source = `src/oc14_triage/labeling/rubric.py`.
+> eval gold) rests on these criteria. Canonical source = `src/oc14_triage/labeling/rubric.py`
+> (the full ~2-page rubric is `SYSTEM_PROMPT` there).
 
 ## What this is
-The rubric three frontier LLMs (OpenAI + Mistral + Anthropic) apply to **real MediQAl French clinical
-vignettes** to assign a triage urgency. Each model returns a **3-level** label *and* its **ESI 1–5**
-equivalent in the same call (free cross-check + comparability to ESI datasets). We keep the **consensus**.
+The rubric three frontier models apply to **real MediQAl French clinical vignettes** to assign a
+triage urgency: **OpenAI `gpt-5.4`, Mistral `medium-3.5`, Anthropic `claude-sonnet-4-6`**. Each
+returns a **3-level** label *and* its **ESI 1–5** equivalent in the same call (free cross-check +
+comparability to ESI datasets). We keep the **consensus**.
+
+The rubric is sent as the (stable, prompt-cached) **system prompt**; only the case varies. Beyond the
+3 levels + ESI mapping below, it now contains: a **worked example per level**, **presentation-based
+discriminators** (chest pain / dyspnoea / abdominal pain / headache / fever / trauma — MTS-style),
+**atypical-presentation pitfalls** (silent MI, afebrile sepsis in elderly, ectopic pregnancy…), the
+**ESI 4-decision-point algorithm**, **vital-sign danger zones**, and explicit **over-triage-when-in-doubt**
+and **non-clinical-text** rules.
 
 ## The 3-level scale (with ESI mapping)
 The 5-level boundaries are collapsed **once, here, transparently** (standard monotonic mapping):

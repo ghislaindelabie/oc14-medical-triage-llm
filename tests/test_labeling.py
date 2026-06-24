@@ -1,5 +1,5 @@
 from oc14_triage.labeling.aggregate import Label, consensus, fleiss_kappa, parse_label
-from oc14_triage.labeling.rubric import build_user_prompt, esi_to_urgency
+from oc14_triage.labeling.rubric import SYSTEM_PROMPT, build_user_prompt, esi_to_urgency
 
 MAX, MOD, DIF = "urgence maximale", "urgence modérée", "urgence différée"
 
@@ -10,9 +10,10 @@ def test_esi_to_urgency():
 
 
 # --- prompt ---
-def test_prompt_has_rubric_and_case():
+def test_rubric_in_system_and_case_in_user():
+    assert "urgence maximale" in SYSTEM_PROMPT and "ESI" in SYSTEM_PROMPT
     p = build_user_prompt("Patient de 60 ans, douleur thoracique.")
-    assert "urgence maximale" in p and "ESI" in p and "douleur thoracique" in p
+    assert "douleur thoracique" in p and "JSON" in p
 
 
 # --- parsing ---
