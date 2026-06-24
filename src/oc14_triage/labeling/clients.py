@@ -10,17 +10,16 @@ from __future__ import annotations
 
 import os
 
-# Default models (mid-tier-strong = cheap; override with env for a frontier eval-gold pass).
-OPENAI_MODEL = os.environ.get("OC14_OPENAI_MODEL", "gpt-4o-mini")
-MISTRAL_MODEL = os.environ.get("OC14_MISTRAL_MODEL", "mistral-small-latest")
-ANTHROPIC_MODEL = os.environ.get("OC14_ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
+# Model ids are read from env (OC14_<PROVIDER>_MODEL) at instantiation, i.e. AFTER .env is loaded.
+_DEFAULT_MODEL = {"openai": "gpt-4o-mini", "mistral": "mistral-small-latest",
+                  "anthropic": "claude-3-5-haiku-latest"}
 
 
 class OpenAIClient:
     name = "openai"
 
-    def __init__(self, model: str = OPENAI_MODEL):
-        self.model = model
+    def __init__(self, model: str | None = None):
+        self.model = model or os.environ.get("OC14_OPENAI_MODEL", _DEFAULT_MODEL["openai"])
 
     def complete(self, system: str, user: str) -> str:
         from openai import OpenAI  # lazy
@@ -33,26 +32,35 @@ class OpenAIClient:
 
 
 class MistralClient:
-    name = "mistral"
+    """Mistral via its REST endpoint (stdlib urllib) — the `mistralai` SDK (2.5.0) imports as an
+    empty namespace package, so we skip it. The API is OpenAI-compatible."""
 
-    def __init__(self, model: str = MISTRAL_MODEL):
-        self.model = model
+    name = "mistral"
+    URL = "https://api.mistral.ai/v1/chat/completions"
+
+    def __init__(self, model: str | None = None):
+        self.model = model or os.environ.get("OC14_MISTRAL_MODEL", _DEFAULT_MODEL["mistral"])
 
     def complete(self, system: str, user: str) -> str:
-        from mistralai import Mistral  # lazy
-        client = Mistral(api_key=os.environ["MISTRAL_API_KEY"])
-        r = client.chat.complete(
-            model=self.model, temperature=0,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-        )
-        return r.choices[0].message.content or ""
+        import json
+        import urllib.request
+        body = json.dumps({
+            "model": self.model, "temperature": 0,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        }).encode("utf-8")
+        req = urllib.request.Request(self.URL, data=body, headers={
+            "Authorization": f"Bearer {os.environ['MISTRAL_API_KEY']}",
+            "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            d = json.loads(resp.read())
+        return d["choices"][0]["message"]["content"] or ""
 
 
 class AnthropicClient:
     name = "anthropic"
 
-    def __init__(self, model: str = ANTHROPIC_MODEL):
-        self.model = model
+    def __init__(self, model: str | None = None):
+        self.model = model or os.environ.get("OC14_ANTHROPIC_MODEL", _DEFAULT_MODEL["anthropic"])
 
     def complete(self, system: str, user: str) -> str:
         import anthropic  # lazy

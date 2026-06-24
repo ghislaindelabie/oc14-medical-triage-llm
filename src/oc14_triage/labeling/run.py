@@ -15,7 +15,9 @@ import json
 import random
 import re
 
-from ..config import PROCESSED, SEED
+from dotenv import load_dotenv
+
+from ..config import PROCESSED, ROOT, SEED
 from ..data.templates import RECO, chat_example, triage_response
 from .aggregate import Aggregate, Label, consensus, parse_label
 from .cases import load_mcqu_questions, load_triage_cases
@@ -142,6 +144,7 @@ def cmd_calibrate(args) -> None:
 
 
 def main() -> None:
+    load_dotenv(ROOT / ".env")  # project-local keys + OC14_*_MODEL ids
     ap = argparse.ArgumentParser(description="OC14 triage labelling pipeline")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
