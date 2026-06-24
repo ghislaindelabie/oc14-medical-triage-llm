@@ -24,7 +24,7 @@ from ..data.templates import RECO, chat_example, triage_response
 from .aggregate import Aggregate, Label, consensus, parse_label
 from .cases import load_mcqu_questions, load_triage_cases
 from .clients import PRICES, MockClient, available_clients, missing_keys
-from .rubric import SYSTEM_PROMPT, build_user_prompt
+from .rubric import SYSTEM_PROMPT, URGENCY_LEVELS, build_user_prompt
 
 LABELED = PROCESSED / "triage_labeled.jsonl"
 REPORT = PROCESSED / "_triage_label_report.json"
@@ -135,8 +135,19 @@ def cmd_build(args) -> None:
     train_src = [r for r in rows if r.get("urgency") and not r.get("is_gold")]
     rng = random.Random(SEED)
     rng.shuffle(gold)
-    n_eval = min(len(gold), args.eval_size)
-    eval_rows, leftover_gold = gold[:n_eval], gold[n_eval:]
+    if args.stratify:
+        # Balanced eval (per-class) so accuracy/recall aren't dominated by the maximale prior.
+        per = args.eval_size // len(URGENCY_LEVELS)
+        eval_rows, eval_ids = [], set()
+        for lv in URGENCY_LEVELS:
+            take = [r for r in gold if r["urgency"] == lv][:per]
+            eval_rows += take
+            eval_ids.update(r["case_id"] for r in take)
+        leftover_gold = [r for r in gold if r["case_id"] not in eval_ids]
+        print(f"stratified eval: {[(lv, sum(r['urgency'] == lv for r in eval_rows)) for lv in URGENCY_LEVELS]}")
+    else:
+        n_eval = min(len(gold), args.eval_size)
+        eval_rows, leftover_gold = gold[:n_eval], gold[n_eval:]
 
     PROCESSED.mkdir(parents=True, exist_ok=True)
     with open(EVAL_GOLD, "w", encoding="utf-8") as fh:
@@ -200,6 +211,7 @@ def main() -> None:
 
     p_build = sub.add_parser("build")
     p_build.add_argument("--eval-size", type=int, default=300)
+    p_build.add_argument("--stratify", action="store_true", help="balanced per-class eval-gold")
     p_build.set_defaults(func=cmd_build)
 
     p_cal = sub.add_parser("calibrate")

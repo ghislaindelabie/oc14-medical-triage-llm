@@ -61,14 +61,30 @@ def triage_report(pairs: list[tuple[str, str]]) -> dict:
         return {"n": 0}
     correct = sum(p == g for p, g in pairs)
     confusion = Counter((g, p) for p, g in pairs)
-    recall = {}
+    recall, precision, f1 = {}, {}, {}
     for lv in URGENCY_LEVELS:
-        gold = [p for p, g in pairs if g == lv]
-        recall[lv] = round(sum(p == lv for p in gold) / len(gold), 3) if gold else None
+        g_lv = [(p, g) for p, g in pairs if g == lv]   # gold == lv
+        p_lv = [(p, g) for p, g in pairs if p == lv]   # predicted == lv
+        tp = sum(p == lv for p, g in g_lv)
+        recall[lv] = round(tp / len(g_lv), 3) if g_lv else None
+        precision[lv] = round(tp / len(p_lv), 3) if p_lv else None
+        r_, p_ = recall[lv], precision[lv]
+        if p_ and r_:
+            f1[lv] = round(2 * p_ * r_ / (p_ + r_), 3)
+        else:
+            f1[lv] = 0.0 if (p_ == 0 or r_ == 0) else None
+    # macro = average over classes present in gold (the honest metric under class imbalance).
+    present = [lv for lv in URGENCY_LEVELS if any(g == lv for _, g in pairs)]
+    macro = lambda d: round(sum(d[lv] or 0 for lv in present) / len(present), 3) if present else None  # noqa: E731
     out = {
         "n": n,
         "accuracy": round(correct / n, 3),
         "recall_per_level": recall,
+        "precision_per_level": precision,
+        "f1_per_level": f1,
+        "macro_recall": macro(recall),
+        "macro_precision": macro(precision),
+        "macro_f1": macro(f1),  # report THIS as the headline (accuracy is skewed by class prior)
         "recall_urgence_maximale": recall["urgence maximale"],  # safety-critical
         "confusion_gold_pred": {f"{g}->{p}": c for (g, p), c in sorted(confusion.items())},
     }
