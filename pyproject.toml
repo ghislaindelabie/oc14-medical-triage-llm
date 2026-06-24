@@ -19,6 +19,8 @@ dependencies = [
 anon = ["presidio-analyzer>=2.2", "presidio-anonymizer>=2.2", "spacy>=3.7"]
 # Evaluation metrics.
 eval = ["scikit-learn>=1.4"]
+# Multi-model triage labelling (OpenAI + Mistral + Anthropic). SDKs lazy-imported; keys via ~/.env.
+label = ["openai>=1.30", "mistralai>=1.0", "anthropic>=0.34"]
 # Local serving wrapper (FastAPI in front of vLLM).
 serving = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "httpx>=0.27", "openai>=1.30"]
 
