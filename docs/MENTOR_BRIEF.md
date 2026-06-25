@@ -27,20 +27,24 @@ classer l'urgence sur **3 niveaux** (maximale / modérée / différée). État d
   **Baseline** (Base non entraîné) pour mesurer le gain réel du fine-tuning.
 
 ## 3. Résultats préliminaires (honnêtes)
-**macro-F1 = 0,65** (sans fuite, reproductible). Comportement de format parfait
-(disclaimer / structure / pas de `<think>` = 1,00).
+**D'un modèle inutilisable à un trieur compétent.** Même gold stratifié (n=300, décodage *greedy*, sans fuite) :
 
-| | gold → prédit | rappel (IC 95 %) |
-|---|---|---|
-| urgence maximale | 91 ✓ · 9→modérée · **0→différée** | **0,91** [0,84–0,95] |
-| urgence modérée | 85 ✓ · 15→maximale · **0→différée** | 0,85 [0,77–0,91] |
-| urgence différée | 28 ✓ · **72→modérée** · 0→maximale | 0,28 [0,20–0,38] |
+| modèle | macro-F1 | rappel *maximale* | format / disclaimer |
+|---|---|---|---|
+| Base (non entraîné) | **0,19** | 0,70 | 0,68 / 0,00 |
+| **SFT (LoRA)** | **0,82** | **0,90** [IC 0,83–0,95] | 1,00 / 1,00 |
 
-**Lecture clé** : le modèle ne **sous-trie jamais** (0 urgence → différée) — c'est le biais
-**sécuritaire voulu** — mais **sur-trie** le bas du spectre (rappel *différée* 0,28). Correction en
-cours (rééquilibrage des données *différée* + DPO ciblé). Un score antérieur de 0,81 était **gonflé**
-(fuite éval→train + décodage échantillonné) et a été **retiré** — la rigueur de l'audit est un point
-fort, pas une faiblesse. *(Baseline Base nu : à insérer — montre le gain net du fine-tuning.)*
+Le fine-tuning fait passer le modèle d'**inutilisable** (le Base répond « maximale » ou échoue à produire
+le format dans ~32 % des cas, ne distingue jamais les niveaux bas, n'émet jamais le *disclaimer*) à un
+**trieur honnête** : macro-F1 **0,19 → 0,82**. Rappel par classe (SFT) : *maximale* 0,90 / *modérée* 0,85 /
+**différée 0,71** [IC 0,62–0,79] ; Cohen κ 0,73 ; format/disclaimer parfaits (1,00).
+
+**Transparence (la rigueur est un atout).** Un premier score de 0,81 était **gonflé** (fuite éval→train +
+décodage échantillonné) → **retiré** après un **audit adverse** du pipeline ; le 0,82 actuel est
+reproductible et sans fuite. **Compromis sécurité/précision assumé** : restaurer la classe *différée*
+(rappel 0,28 → 0,71) a réintroduit un peu de sous-triage — **1 cas *urgence maximale* → *différée*** (une
+urgence vitale rétrogradée) — cible précise de l'étape **DPO** à venir (coût asymétrique : le sous-triage
+est davantage pénalisé).
 
 ## 4. Ce qu'il reste à finaliser
 1. **Corriger le sur-triage** : rééquilibrer le signal *différée* (en cours) + **DPO** ciblé
@@ -65,6 +69,6 @@ Standard argent (pas de clinicien) ; **circularité** (le gold = consensus 3-LLM
 mesure la *fidélité d'imitation* des modèles-professeurs sur le sous-ensemble *facile*, pas la
 justesse clinique) ; corpus de **vignettes d'examen** (sur-représente le grave : ~47 % vs ~25-30 %
 en vraies urgences) ; **FR-primaire** (triage EN mince, éval 100 % FR) ; **n=100/classe** (IC larges,
-plancher de sécurité = la borne basse 0,84). **Barre de sécurité** : 0,91 de rappel sur les urgences
-vitales reste **insuffisant pour un triage autonome** (≥1/10 manquée à la borne basse) → aide à la
-décision sous supervision humaine.
+plancher de sécurité = la borne basse 0,83). **Barre de sécurité** : 0,90 de rappel sur les urgences
+vitales (borne basse 0,83) + 1 urgence rétrogradée en *différée* dans l'éval → **insuffisant pour un
+triage autonome** → aide à la décision sous supervision humaine.

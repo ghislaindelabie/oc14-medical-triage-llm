@@ -372,7 +372,14 @@ precision↔safety trade):** restoring *différée* re-introduced a little under
 (one emergency to the lowest level) + 3 modérée→différée, where the over-cautious 0.65 model had zero. That
 single critical under-triage is the precise target for the next step.
 
-**Next.** naive-Base baseline (progress floor, running) → **cost-weighted DPO** (chosen=correct,
-rejected=wrong *either direction*, extra weight on under-triage; sources = the 11 clear-cut hand-written
-safety pairs + unambiguous under-triaged red-flag cases — NOT the ambiguous 2-1 splits) to drive the
-maximale→différée count back to 0 while keeping *différée* recall.
+**Baseline (progress floor).** Naive **Qwen3-1.7B-Base, no fine-tuning**, same 300-gold/harness:
+**macro-F1 0.19** (acc 0.25; recall maximale 0.70 / modérée 0.05 / différée 0.00). It defaults to
+"maximale" or **fails to produce a usable level on ~32%** (96 `(none)`), never differentiates the lower
+classes, and never emits the disclaimer (format 0.68 / disclaimer 0.00). So **fine-tuning bought
+0.19 → 0.82 macro-F1** and taught the format + safety disclaimer from scratch (0.68/0.00 → 1.00/1.00) —
+the honest, dramatic progress signal.
+
+**Next.** **cost-weighted DPO** (chosen=correct, rejected=wrong *either direction*, extra weight on
+under-triage; sources = the 11 clear-cut hand-written safety pairs + unambiguous under-triaged red-flag
+cases — NOT the ambiguous 2-1 splits) to drive the lone maximale→différée back to 0 while keeping
+*différée* recall.
