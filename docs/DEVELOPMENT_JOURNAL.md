@@ -347,3 +347,32 @@ signal.
 *différée* collapse: rebalance/augment the *différée* training signal (oversample, or relax E1 to keep
 majority-différée even when one rater dissents) and/or use **DPO** to penalise over-triage of low-acuity.
 (3) Re-eval + compare.
+
+## différée-restored retrain (2026-06-25) — honest macro-F1 **0.82**
+
+Applied the data fix: **relaxed E1 to `n_agree>=2`** (keep legitimate 2-of-3 majorities — restores the
+ambiguous low-acuity signal; excluded only 347 true no-majority splits vs 1,193 before) and
+**oversampled the 11 hand-written vignettes ×8** (the main EN-triage + balanced-*différée* exemplars).
+Train triage now 2,041 rows (1,098 max / 689 mod / 254 diff, vs near-zero *différée* before). Same
+greedy/batched/leak-free eval (now also **None-safe** after the baseline exposed a confusion-sort crash).
+
+| v9 eval (greedy, leak-free, stratified 300) | recall (95% CI) | precision |
+|---|---|---|
+| urgence maximale | 0.90 [0.83, 0.95] | 0.88 |
+| urgence modérée | 0.85 [0.77, 0.91] | 0.69 |
+| urgence différée | **0.71 [0.62, 0.79]** | 0.95 |
+| **macro-F1 0.822** · macro-P 0.84 · macro-R 0.82 · acc 0.82 · Cohen κ 0.73 · behavioural 1.00 | | |
+
+Confusion: maximale 90 ✓ / 9→modérée / **1→différée**; modérée 85 ✓ / 12→maximale / 3→différée;
+différée **71 ✓** / 29→modérée / 0→maximale.
+
+**Reading.** The data fix worked: *différée* recall **0.28 → 0.71**, macro-F1 **0.65 → 0.82** — and this
+0.82 is *honest* (leak-free, deterministic), unlike the retracted, inflated 0.81. **Cost (the
+precision↔safety trade):** restoring *différée* re-introduced a little under-triage — **1 maximale→différée**
+(one emergency to the lowest level) + 3 modérée→différée, where the over-cautious 0.65 model had zero. That
+single critical under-triage is the precise target for the next step.
+
+**Next.** naive-Base baseline (progress floor, running) → **cost-weighted DPO** (chosen=correct,
+rejected=wrong *either direction*, extra weight on under-triage; sources = the 11 clear-cut hand-written
+safety pairs + unambiguous under-triaged red-flag cases — NOT the ambiguous 2-1 splits) to drive the
+maximale→différée count back to 0 while keeping *différée* recall.
