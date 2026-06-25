@@ -110,7 +110,10 @@ def triage_report(pairs: list[tuple[str, str]]) -> dict:
         "macro_f1": macro(f1),  # report THIS as the headline (accuracy is skewed by class prior)
         "recall_urgence_maximale": recall["urgence maximale"],  # safety-critical
         "recall_ci_per_level": recall_ci,  # 95% Wilson CIs — cite the maximale lower bound as the safety floor
-        "confusion_gold_pred": {f"{g}->{p}": c for (g, p), c in sorted(confusion.items())},
+        # None-safe sort + display: an unparseable prediction (p=None, e.g. the untrained Base) shows as
+        # "(none)" rather than crashing the str-vs-None comparison.
+        "confusion_gold_pred": {f"{g}->{p or '(none)'}": c
+                                for (g, p), c in sorted(confusion.items(), key=lambda kv: (kv[0][0], str(kv[0][1])))},
     }
     try:
         from sklearn.metrics import cohen_kappa_score  # optional (eval extra)

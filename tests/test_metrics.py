@@ -48,6 +48,22 @@ def test_triage_report_accuracy_and_recall():
     assert rep["recall_urgence_maximale"] == 0.5
 
 
+def test_triage_report_handles_none_predictions():
+    # the untrained Base produces unparseable output -> pred None; must not crash (regression)
+    pairs = [("urgence maximale", "urgence maximale"), (None, "urgence différée"),
+             (None, "urgence modérée"), ("urgence modérée", "urgence modérée")]
+    rep = triage_report(pairs)
+    assert rep["n"] == 4
+    assert "urgence différée->(none)" in rep["confusion_gold_pred"]
+    assert rep["recall_ci_per_level"]["urgence maximale"] is not None
+
+
+def test_extract_urgency_prefers_verdict_line():
+    # E3: a level name-dropped in prose before the verdict line must NOT win
+    t = "Ce n'est pas une urgence maximale. Niveau d'urgence : urgence modérée. Recommandation : ..."
+    assert extract_urgency(t) == "urgence modérée"
+
+
 def test_behavioural_report_rates():
     responses = [
         {"text": "Niveau d'urgence : urgence maximale. Recommandation : agir. ne remplace pas.",
