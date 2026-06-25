@@ -265,3 +265,44 @@ confusion matrix). Then a fair **second DPO attempt** with **triage preference p
 consensus, rejected = an under-triaged answer — flagged-disagreement cases are a natural source). This
 addresses the earlier DPO failure, whose root cause was **off-task data composition** (~99% UltraMedical
 verbosity vs 11 triage/safety pairs), **not** insufficient pair count.
+
+## SFT retrain on LLM-consensus labels (2026-06-25) — the first defensible eval
+
+**Train.** Combined set (`scripts/build_retrain_sft.py`): dropped the 1,415 old heuristic triage rows
+(`mediqal_triage` = same vignettes, now contradictory), kept the medical-QA + EN breadth, added the 2,346
+LLM-consensus triage rows → **5,931 train / 572 val**. Kaggle T4, full 2 epochs, **train_loss 0.869**
+(old heuristic-trained SFT was 0.845 — same convergence; the question is whether *better labels* help on a
+*real* eval).
+
+**Eval on the stratified 300-case gold (100/100/100), macro-F1 headline:**
+
+| metric | value |
+|---|---|
+| **macro-F1** | **0.813** |
+| macro-precision / macro-recall | 0.816 / 0.813 |
+| accuracy | 0.813 |
+| **recall urgence maximale (safety)** | **0.93** |
+| Cohen's κ vs gold | 0.72 (substantial) |
+| per-class F1 | maximale **0.885** · modérée 0.723 · différée 0.83 |
+| behavioural | disclaimer 1.00 · format 1.00 · no-`<think>` 1.00 |
+
+Confusion (gold→pred): maximale 93 ok / **7→modérée / 0→différée**; modérée 73 ok / 17→maximale / 10→différée;
+différée 78 ok / 22→modérée / 0→maximale.
+
+**Reading.** (1) **Strong, balanced** — macro-F1 0.81 means it's good across *all three* classes, not gaming
+the maximale prior (raw accuracy = macro here because the eval is balanced). (2) **Safety holds** — 93%
+emergency recall, and the 7% missed emergencies drop only **one level (to modérée), never to différée** — the
+*safe* failure mode. (3) **Over-triage lean** — modérée→maximale (17) and différée→modérée (22) outnumber the
+reverse, consistent with the corpus + over-triage default; clinically the preferred bias. (4) **No
+degeneration** — perfect format/disclaimer/no-`<think>`, confirming the inference config (stop on `<|im_end|>`,
+trained system prompt, `enable_thinking=False`). (5) Weakest class is **modérée** (F1 0.72) — the middle class
+is inherently ambiguous (confused both up and down), as expected.
+
+**Caveat / open comparison.** This is **not** an apples-to-apples "LLM labels beat heuristic" claim yet — the
+old heuristic SFT was only eval'd on n=6. A clean head-to-head requires re-running the **old adapter**
+(`models/sft-base-lora/`, local) on this same 300-gold. Pending (optional). Regardless, this n=300 macro-F1
+0.81 is the **first statistically meaningful eval** of the project — the deliverable the n=6 sanity check
+could not be.
+
+**Next.** Optional old-vs-new head-to-head on the 300-gold; then the DPO preference-pair step (triage
+chosen/rejected from disagreement cases) → eval → compare SFT vs SFT+DPO.
