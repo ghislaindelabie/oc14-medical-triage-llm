@@ -42,7 +42,7 @@ CURRENT = [
     (DOCS / "KNOWN_ISSUES.md", "AUD", "Pre-GPU adversarial audit & fixes"),
     (DOCS / "ARCHITECTURE_AND_DECISIONS.md", "ARC", "Architecture & decisions"),
     (DOCS / "TRIAGE_CRITERIA.md", "MED", "Triage criteria (medical core)"),
-    (DOCS / "IMPLEMENTATION_PLAN.md", "PLN", "Implementation plan & status"),
+    (DOCS.parent / "IMPLEMENTATION_PLAN.md", "PLN", "Implementation plan & status"),
 ]
 RESEARCH = [(SRC / f, f[:2], short) for f, short in RESEARCH_ORDER]
 
