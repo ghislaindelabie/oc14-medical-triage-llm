@@ -6,20 +6,20 @@
 > finaliser, et pourquoi le travail est prêt à être présenté. Détails techniques : voir le rapport
 > complet et `REPORT_LIMITATIONS` / `DEVELOPMENT_JOURNAL`.
 
-## 1. Le projet & où nous en sommes
+## 1. Le projet & où j'en suis
 La tâche centrale est le **triage** (et non le Q&A médical) : à partir d'une présentation clinique,
 classer l'urgence sur **3 niveaux** (maximale / modérée / différée). État d'avancement :
-- **Données** collectées (MediQAl FR, MedQuAD EN, UltraMedical) ; anonymisation RGPD (Presidio) prévue.
-- **Jeu d'évaluation rigoureux construit** : 3 075 vignettes cliniques réelles labellisées par
+- J'ai **collecté les données** (MediQAl FR, MedQuAD EN, UltraMedical) ; l'anonymisation RGPD (Presidio) est prévue.
+- J'ai **construit un jeu d'évaluation rigoureux** : 3 075 vignettes cliniques réelles labellisées par
   **consensus de 3 LLM de pointe**, gold stratifié 100/100/100.
-- **SFT (LoRA) entraîné et évalué** sur Kaggle (T4 gratuit) ; **DPO** diagnostiqué (échec initial
-  compris, seconde tentative ciblée en cours).
-- **Audit adverse** de tout le pipeline réalisé (16 défauts corrigés) → un **résultat honnête** établi.
+- J'ai **entraîné et évalué le SFT (LoRA)** sur Kaggle (T4 gratuit) ; j'ai **diagnostiqué le DPO**
+  (échec initial compris, seconde tentative ciblée en cours).
+- J'ai mené un **audit adverse** de tout le pipeline (16 défauts corrigés) → un **résultat honnête** établi.
 
 ## 2. Méthodologie
 - **Labellisation par consensus** : GPT-5.4 + Mistral-Medium-3.5 + Claude-Sonnet-4.6 appliquent une
   rubrique **citée** (ESI / MTS / FRENCH / CIMU) et renvoient le niveau 3-classes **+ l'ESI 1-5** dans
-  le même appel. On garde l'**unanime** comme *gold*. Accord inter-modèles **Fleiss κ ≈ 0,67**
+  le même appel. Je garde l'**unanime** comme *gold*. Accord inter-modèles **Fleiss κ ≈ 0,67**
   (« substantiel »). C'est un **standard argent** (pas de clinicien) — assumé.
 - **Entraînement** : Qwen3-1.7B-**Base**, SFT+LoRA (Unsloth), 2 époques, T4 gratuit (~1 h30/run).
 - **Évaluation** : gold **stratifié** (équilibré par classe), décodage **greedy** (déterministe,
