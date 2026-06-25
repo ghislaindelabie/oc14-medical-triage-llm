@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Build ONE self-contained, mobile-friendly HTML report from the OC14 research
-markdown docs and publish it into the vault, where `vault-reader` auto-serves it
-on the tailnet (https://p710.tail3089b5.ts.net:8445/doc/oc14-finetune-llm-report).
+"""Build self-contained, mobile-friendly HTML reports from the OC14 markdown docs and publish them
+into the vault, where `vault-reader` auto-serves them on the tailnet.
 
-Canonical "publish an HTML report for phone reading" method on the P710 — see the
-global ~/.claude/CLAUDE.md section "Publishing HTML reports".
+Produces TWO reports:
+  - the FULL bundle (current-state operational docs + the research prior) ->  /doc/oc14-finetune-llm-report
+  - a SHORT mentor brief (docs/MENTOR_BRIEF.md)                          ->  /doc/oc14-mentor-brief
+
+Canonical "publish an HTML report for phone reading" method on the P710 — see the global
+~/.claude/CLAUDE.md section "Publishing HTML reports".
 
 Run:  uv run --with markdown python3 docs/research/build_report_html.py
 """
@@ -14,36 +17,34 @@ from pathlib import Path
 
 import markdown
 
-SRC = Path(__file__).resolve().parent  # docs/research/
-# Publish target: a folder in the vault (sibling of the OC13 report). vault-reader
-# discovers any *.html under ~/vault and serves it at /doc/<filename-stem>.
-OUT = Path("/home/gdelabie/vault/oc14-finetune-llm/OC14-finetune-llm-report.html")
+SRC = Path(__file__).resolve().parent          # docs/research/
+DOCS = SRC.parent                               # docs/
+VAULT = Path("/home/gdelabie/vault/oc14-finetune-llm")
 
-ORDER = [
-    "00-OVERALL-APPROACH.md",
-    "01-qwen3-1.7b-base-model.md",
-    "02-unsloth-sft-dpo-qwen3.md",
-    "03-trl-peft-sft-dpo-guide.md",
-    "04-oc14-dataset-construction-recipe.md",
-    "05-serving-deployment-vllm-runpod.md",
-    "06-presidio-anonymization-gdpr-medical-dataset.md",
-    "07-reference-notebooks-and-repos.md",
-    "08-evaluation-clinical-safety-jama-evidence.md",
-    "09-red-team-challenges.md",
+# Research prior (deep-dives) — order + short labels.
+RESEARCH_ORDER = [
+    ("00-OVERALL-APPROACH.md", "Overall approach (start here)"),
+    ("01-qwen3-1.7b-base-model.md", "Qwen3-1.7B model"),
+    ("02-unsloth-sft-dpo-qwen3.md", "Unsloth (SFT + DPO)"),
+    ("03-trl-peft-sft-dpo-guide.md", "TRL + PEFT guide"),
+    ("04-oc14-dataset-construction-recipe.md", "Dataset recipe"),
+    ("05-serving-deployment-vllm-runpod.md", "Serving & deploy"),
+    ("06-presidio-anonymization-gdpr-medical-dataset.md", "Presidio & GDPR"),
+    ("07-reference-notebooks-and-repos.md", "Reference notebooks"),
+    ("08-evaluation-clinical-safety-jama-evidence.md", "Eval & safety"),
+    ("09-red-team-challenges.md", "Red-team challenges"),
 ]
 
-SHORT = {
-    "00-OVERALL-APPROACH.md": "Overall approach (start here)",
-    "01-qwen3-1.7b-base-model.md": "Qwen3-1.7B model",
-    "02-unsloth-sft-dpo-qwen3.md": "Unsloth (SFT + DPO)",
-    "03-trl-peft-sft-dpo-guide.md": "TRL + PEFT guide",
-    "04-oc14-dataset-construction-recipe.md": "Dataset recipe",
-    "05-serving-deployment-vllm-runpod.md": "Serving & deploy",
-    "06-presidio-anonymization-gdpr-medical-dataset.md": "Presidio & GDPR",
-    "07-reference-notebooks-and-repos.md": "Reference notebooks",
-    "08-evaluation-clinical-safety-jama-evidence.md": "Eval & safety",
-    "09-red-team-challenges.md": "Red-team challenges",
-}
+# Current-state operational docs (the recent work) — shown FIRST in the full bundle.
+CURRENT = [
+    (DOCS / "DEVELOPMENT_JOURNAL.md", "JR", "Development journal — current state + all results"),
+    (DOCS / "REPORT_LIMITATIONS.md", "LIM", "Limitations & honest caveats"),
+    (DOCS / "KNOWN_ISSUES.md", "AUD", "Pre-GPU adversarial audit & fixes"),
+    (DOCS / "ARCHITECTURE_AND_DECISIONS.md", "ARC", "Architecture & decisions"),
+    (DOCS / "TRIAGE_CRITERIA.md", "MED", "Triage criteria (medical core)"),
+    (DOCS / "IMPLEMENTATION_PLAN.md", "PLN", "Implementation plan & status"),
+]
+RESEARCH = [(SRC / f, f[:2], short) for f, short in RESEARCH_ORDER]
 
 
 def first_h1(text: str, fallback: str) -> str:
@@ -66,13 +67,8 @@ def add_backtoc(body: str) -> str:
                   lambda m: f"{m.group(1)}{m.group(2)}{link}{m.group(3)}", body)
 
 
-docs = []
-for i, fname in enumerate(ORDER):
-    p = SRC / fname
-    if not p.exists():
-        continue
-    raw = p.read_text(encoding="utf-8")
-    pfx = f"doc{i:02d}"
+def _render(path: Path, pfx: str, badge: str, short: str) -> dict:
+    raw = path.read_text(encoding="utf-8")
     md = markdown.Markdown(extensions=["extra", "toc", "sane_lists", "admonition"],
                            extension_configs={"toc": {"toc_depth": "2-3"}})
     body = add_backtoc(prefix_anchors(md.convert(raw), pfx))
@@ -83,35 +79,9 @@ for i, fname in enumerate(ORDER):
                 sections.append((k["id"], k["name"]))
         else:
             sections.append((tok["id"], tok["name"]))
-    docs.append({
-        "id": pfx, "num": fname[:2], "title": first_h1(raw, fname),
-        "short": SHORT.get(fname, fname), "body": body, "sections": sections,
-    })
+    return {"id": pfx, "num": badge, "title": first_h1(raw, path.name),
+            "short": short or first_h1(raw, path.name), "body": body, "sections": sections}
 
-contents_items = []
-for j, d in enumerate(docs):
-    sec_links = "\n".join(
-        f'<li><a href="#{d["id"]}-{html.escape(sid)}">{html.escape(name)}</a></li>'
-        for sid, name in d["sections"]
-    )
-    open_attr = " open" if j == 0 else ""
-    contents_items.append(f"""
-    <details class="toc-doc"{open_attr}>
-      <summary><span class="badge">{html.escape(d['num'])}</span> <a class="doc-jump" href="#{d['id']}">{html.escape(d['short'])}</a></summary>
-      <ul class="toc-sub">
-        {sec_links}
-      </ul>
-    </details>""")
-contents_html = "\n".join(contents_items)
-
-sections_html = []
-for d in docs:
-    sections_html.append(f"""
-  <section class="doc" id="{d['id']}">
-    <div class="doc-meta"><span class="badge">{html.escape(d['num'])}</span><a class="totop" href="#contents">⤴ Contents</a></div>
-    {d['body']}
-  </section>""")
-sections_body = "\n<hr class='doc-sep'>\n".join(sections_html)
 
 CSS = """
 :root{
@@ -187,27 +157,53 @@ addEventListener('scroll',function(){fab.style.opacity=scrollY>400?'1':'0';},{pa
 fab.style.opacity='0';fab.style.transition='opacity .2s';
 """
 
-doc_count = len(docs)
-page = f"""<!doctype html>
+
+def build_report(entries, out_path: Path, page_title: str, header_title: str, intro_html: str):
+    docs = []
+    for i, (path, badge, short) in enumerate(entries):
+        if Path(path).exists():
+            docs.append(_render(Path(path), f"doc{i:02d}", badge, short))
+
+    contents_items = []
+    for j, d in enumerate(docs):
+        sec_links = "\n".join(
+            f'<li><a href="#{d["id"]}-{html.escape(sid)}">{html.escape(name)}</a></li>'
+            for sid, name in d["sections"])
+        open_attr = " open" if j == 0 else ""
+        contents_items.append(f"""
+    <details class="toc-doc"{open_attr}>
+      <summary><span class="badge">{html.escape(d['num'])}</span> <a class="doc-jump" href="#{d['id']}">{html.escape(d['short'])}</a></summary>
+      <ul class="toc-sub">
+        {sec_links}
+      </ul>
+    </details>""")
+    contents_html = "\n".join(contents_items)
+
+    sections_html = [f"""
+  <section class="doc" id="{d['id']}">
+    <div class="doc-meta"><span class="badge">{html.escape(d['num'])}</span><a class="totop" href="#contents">⤴ Contents</a></div>
+    {d['body']}
+  </section>""" for d in docs]
+    sections_body = "\n<hr class='doc-sep'>\n".join(sections_html)
+
+    page = f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<title>OC14 · Fine-tune your own LLM — Research &amp; Plan</title>
+<title>{html.escape(page_title)}</title>
 <style>{CSS}</style>
 </head>
 <body>
 <a id="top"></a>
 <header class="top">
-  <div class="h">OC14 · Medical-triage LLM POC</div>
+  <div class="h">{html.escape(header_title)}</div>
   <a class="cbtn" href="#contents">Contents</a>
 </header>
 <main class="wrap">
   <div class="intro" id="overview">
-    <h1>OC14 — Fine-tune your own LLM</h1>
-    <p><strong>Project:</strong> a proof-of-concept bilingual (FR/EN) medical-triage assistant for a fictional French hospital — built by fine-tuning <strong>Qwen3-1.7B</strong> (SFT + LoRA → DPO), served via <strong>vLLM</strong> on RunPod, wrapped in FastAPI + Docker + GitHub Actions CI/CD, with a 20-page report.</p>
-    <p class="note">This page bundles {doc_count} documents: the hardened overall approach, eight topic deep-dives, and the red-team review. Read <strong>00 — Overall approach</strong> first; the rest are reference. Tap <strong>Contents</strong> (top-right) or the <strong>↩ TOC</strong> link on any heading to jump back to navigation.</p>
+    {intro_html}
   </div>
 
   <nav id="contents">
@@ -223,23 +219,47 @@ page = f"""<!doctype html>
 </html>
 """
 
-# Reconcile dangling intra-doc links (hand-written TOCs vs generated slugs).
-all_ids = set(re.findall(r'id="([^"]+)"', page))
-def _norm(s): return re.sub(r"-+", "-", s)
-_norm_map = {}
-for _i in all_ids:
-    _norm_map.setdefault(_norm(_i), _i)
-def _fix(m):
-    target = m.group(1)
-    if target in all_ids:
-        return m.group(0)
-    if _norm(target) in _norm_map:
-        return f'href="#{_norm_map[_norm(target)]}"'
-    cands = sorted((i for i in all_ids if i.startswith(target)), key=len)
-    return f'href="#{cands[0]}"' if cands else m.group(0)
-page = re.sub(r'href="#([^"]+)"', _fix, page)
+    # Reconcile dangling intra-doc links (hand-written TOCs vs generated slugs).
+    all_ids = set(re.findall(r'id="([^"]+)"', page))
 
-OUT.parent.mkdir(parents=True, exist_ok=True)
-OUT.write_text(page, encoding="utf-8")
-_dangle = [t for t in set(re.findall(r'href="#([^"]+)"', page)) if t not in all_ids]
-print(f"Published {OUT}  ({len(page):,} bytes, {doc_count} docs, {len(_dangle)} dangling anchors)")
+    def _norm(s):
+        return re.sub(r"-+", "-", s)
+
+    norm_map = {}
+    for _i in all_ids:
+        norm_map.setdefault(_norm(_i), _i)
+
+    def _fix(m):
+        target = m.group(1)
+        if target in all_ids:
+            return m.group(0)
+        if _norm(target) in norm_map:
+            return f'href="#{norm_map[_norm(target)]}"'
+        cands = sorted((i for i in all_ids if i.startswith(target)), key=len)
+        return f'href="#{cands[0]}"' if cands else m.group(0)
+
+    page = re.sub(r'href="#([^"]+)"', _fix, page)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(page, encoding="utf-8")
+    dangle = [t for t in set(re.findall(r'href="#([^"]+)"', page)) if t not in all_ids]
+    print(f"Published {out_path}  ({len(page):,} bytes, {len(docs)} docs, {len(dangle)} dangling anchors)")
+
+
+if __name__ == "__main__":
+    full_intro = """<h1>OC14 — Fine-tune your own LLM</h1>
+    <p><strong>Project:</strong> a proof-of-concept bilingual (FR/EN) medical-triage assistant for a
+    fictional French hospital — fine-tuning <strong>Qwen3-1.7B</strong> (SFT + LoRA → DPO), served via
+    <strong>vLLM</strong>, with CI/CD and a ≤20-page report.</p>
+    <p class="note"><strong>Current state first</strong> (development journal, limitations, the
+    adversarial audit, architecture, the triage rubric, the plan), then the original
+    <strong>research prior</strong> (overall approach + topic deep-dives + red-team). The honest
+    headline is in the journal; read <strong>JR — Development journal</strong> and
+    <strong>LIM — Limitations</strong> first. Tap <strong>Contents</strong> or any <strong>↩ TOC</strong>.</p>"""
+    build_report(CURRENT + RESEARCH, VAULT / "OC14-finetune-llm-report.html",
+                 "OC14 · Fine-tune your own LLM — Full report", "OC14 · Medical-triage LLM POC", full_intro)
+
+    brief_intro = """<h1>OC14 — Note de synthèse (mentor)</h1>
+    <p class="note">Résumé court : projet, méthode, résultats préliminaires honnêtes, ce qu'il reste à
+    finaliser, et pourquoi c'est prêt à présenter. Détails complets dans le rapport.</p>"""
+    build_report([(DOCS / "MENTOR_BRIEF.md", "", "")], VAULT / "OC14-mentor-brief.html",
+                 "OC14 · Note de synthèse pour le mentor", "OC14 · Note mentor", brief_intro)
