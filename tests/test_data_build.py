@@ -53,8 +53,9 @@ def test_no_eval_gold_leak_into_train():  # guards audit E2/E4
 
 
 @pytest.mark.skipif(not SFT_TRAIN.exists(), reason="SFT data not built")
-def test_no_duplicate_examples():
-    keys = [(_user(r), r["messages"][2]["content"]) for r in _load(SFT_TRAIN)]
+def test_no_unintended_duplicate_examples():
+    # vignettes are intentionally oversampled; check no *other* exact (user, assistant) dups
+    keys = [(_user(r), r["messages"][2]["content"]) for r in _load(SFT_TRAIN) if r.get("source") != "vignette"]
     assert len(keys) == len(set(keys)), "duplicate (user, assistant) rows in train"
 
 

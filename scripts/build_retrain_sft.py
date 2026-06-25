@@ -41,6 +41,10 @@ def _key(text: str) -> str:  # normalized 80-char prefix — robust clinical-cas
     return " ".join((text or "").split()).lower()[:80]
 
 
+# Oversample the hand-written vignettes: they are high-quality, the main EN-triage signal, AND carry
+# balanced 'différée' — the two classes the model is short on. Modest overfit on these archetypes is fine.
+VIGN_OVERSAMPLE = 8
+
 old_train, old_val, new_tri = load("sft_train.jsonl"), load("sft_val.jsonl"), load("triage_sft_train.jsonl")
 gold = load("triage_eval_gold.jsonl")
 
@@ -54,7 +58,7 @@ rng = random.Random(SEED)
 rng.shuffle(new_tri)
 tri_val, tri_train = new_tri[:150], new_tri[150:]
 
-train = old_qa_train + vignettes + tri_train
+train = old_qa_train + vignettes * VIGN_OVERSAMPLE + tri_train
 val = old_qa_val + tri_val
 
 # (E2/E4) Drop any train/val row whose clinical case is a held-out eval-gold case (input leak via the
@@ -76,6 +80,7 @@ shutil.copy(PROCESSED / "triage_eval_gold.jsonl", UP / "triage_eval_gold.jsonl")
 comp = lambda rows: dict(collections.Counter(r.get("source") for r in rows))  # noqa: E731
 print(f"train {len(train)}: {comp(train)}")
 print(f"val   {len(val)}: {comp(val)}")
-print(f"vignettes kept: {sum(r.get('source') == 'vignette' for r in train)} (expect {len(vignettes)})")
+print(f"vignettes (×{VIGN_OVERSAMPLE}): {sum(r.get('source') == 'vignette' for r in train)} "
+      f"(expect {len(vignettes) * VIGN_OVERSAMPLE})")
 print(f"eval-gold leak rows dropped: train {leaked[0]}, val {leaked[1]}")
 print(f"copied triage_eval_gold.jsonl ({len(gold)}) -> {UP}")

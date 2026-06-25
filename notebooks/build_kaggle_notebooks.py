@@ -187,6 +187,7 @@ Headline = **macro-F1** (robust to the maximale-skewed class prior) + **maximale
      "model, tokenizer = FastLanguageModel.from_pretrained(\n"
      "    model_name=ADAPTER_DIR, max_seq_length=2048, load_in_4bit=True)\n"
      "FastLanguageModel.for_inference(model)\n"
+     "import torch; torch.manual_seed(3407)  # hygiene; eval is greedy (deterministic) regardless\n"
      "IM_END = tokenizer.convert_tokens_to_ids('<|im_end|>')\n"
      "STOP_IDS = [IM_END, tokenizer.eos_token_id]\n"
      "tokenizer.padding_side = 'left'\n"
@@ -428,6 +429,55 @@ def with_instruct_native(cells):
     return cells
 
 
+def baseline_cells():
+    """Naive Base baseline: load raw Qwen3-1.7B-Base (NO adapter), set the same ChatML template, and
+    score the 300-gold with the same greedy/batched harness. The honest progress floor."""
+    md = ("md", "# OC14 — Naive Base baseline (Qwen3-1.7B-Base, NO fine-tuning)\n\n"
+          "Scores the **untrained** Base model on the same 300-case stratified gold, same harness "
+          "(ChatML, FR system prompt, greedy + batched). The delta to the SFT model is what fine-tuning "
+          "bought — the honest progress floor.")
+    data_sys = ("code", "import glob, os, json\n"
+                "dd = glob.glob('/kaggle/input/**/sft_train.jsonl', recursive=True)\n"
+                "DATA_DIR = os.path.dirname(dd[0]) if dd else None\n"
+                "SYS = {}\n"
+                "if DATA_DIR:\n"
+                "    for ln in open(f'{DATA_DIR}/sft_train.jsonl', encoding='utf-8').read().split('\\n'):\n"
+                "        if not ln.strip():\n"
+                "            continue\n"
+                "        r = json.loads(ln)\n"
+                "        SYS.setdefault(r['lang'], r['messages'][0]['content'])\n"
+                "        if len(SYS) == 2:\n"
+                "            break\n"
+                "print('system prompts loaded for langs:', list(SYS))")
+    load = ("code", "from unsloth import FastLanguageModel\n"
+            "import torch; torch.manual_seed(3407)\n"
+            "model, tokenizer = FastLanguageModel.from_pretrained(\n"
+            "    model_name='Qwen/Qwen3-1.7B-Base', max_seq_length=2048, load_in_4bit=True)\n"
+            "FastLanguageModel.for_inference(model)\n"
+            "# Base ships no chat_template -> set the SAME ChatML used at SFT (fair comparison).\n"
+            "tokenizer.chat_template = (\n"
+            "    \"{% for message in messages %}\"\n"
+            "    \"{{'<|im_start|>' + message['role'] + '\\n' + message['content'] + '<|im_end|>' + '\\n'}}\"\n"
+            "    \"{% endfor %}\"\n"
+            "    \"{% if add_generation_prompt %}{{'<|im_start|>assistant\\n'}}{% endif %}\")\n"
+            "IM_END = tokenizer.convert_tokens_to_ids('<|im_end|>')\n"
+            "STOP_IDS = [IM_END, tokenizer.eos_token_id]\n"
+            "tokenizer.padding_side = 'left'\n"
+            "if tokenizer.pad_token_id is None:\n"
+            "    tokenizer.pad_token = tokenizer.eos_token\n"
+            "def gen_batch(systems, users):\n"
+            "    texts = [tokenizer.apply_chat_template(\n"
+            "                 [{'role': 'system', 'content': s}, {'role': 'user', 'content': u}],\n"
+            "                 add_generation_prompt=True, enable_thinking=False, tokenize=False)\n"
+            "             for s, u in zip(systems, users)]\n"
+            "    enc = tokenizer(texts, return_tensors='pt', padding=True, add_special_tokens=False).to(model.device)\n"
+            "    out = model.generate(**enc, max_new_tokens=128, do_sample=False, repetition_penalty=1.1,\n"
+            "                         eos_token_id=STOP_IDS, pad_token_id=tokenizer.pad_token_id)\n"
+            "    plen = enc['input_ids'].shape[1]\n"
+            "    return [tokenizer.decode(o[plen:], skip_special_tokens=True).strip() for o in out]")
+    return [md, EVAL_CELLS[1], EVAL_CELLS[2], data_sys, load, EVAL_CELLS[5]]
+
+
 if __name__ == "__main__":
     build(SFT_CELLS, HERE / "oc14-sft-lora" / "oc14-sft-lora.ipynb")
     build(with_instruct_native(SFT_CELLS), HERE / "oc14-sft-instruct-native" / "oc14-sft-instruct-native.ipynb")
@@ -438,3 +488,4 @@ if __name__ == "__main__":
     # Same eval cells; the kernel-metadata decides which model (via kernel_sources) gets scored.
     build(EVAL_CELLS, HERE / "oc14-instruct-eval" / "oc14-instruct-eval.ipynb")
     build(EVAL_CELLS, HERE / "oc14-instruct-native-eval" / "oc14-instruct-native-eval.ipynb")
+    build(baseline_cells(), HERE / "oc14-base-eval" / "oc14-base-eval.ipynb")

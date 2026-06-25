@@ -143,10 +143,11 @@ def cmd_build(args) -> None:
     raw = [json.loads(x) for x in LABELED.read_text(encoding="utf-8").split("\n") if x.strip()]
     cons = [(r, consensus(r["case_id"], [_label_from_dict(d) for d in r["labels"]])) for r in raw]
     gold = [(r, c) for r, c in cons if c.is_gold]
-    # (E1) Training rows need a REAL majority + clean consensus — exclude flagged 3-way splits and
-    # ESI-inconsistent cases, which otherwise inject arbitrary tie-winner labels on the hardest cases.
-    train_src = [(r, c) for r, c in cons
-                 if c.urgency and not c.is_gold and not c.flagged and c.n_agree >= 2]
+    # (E1, refined) Keep legitimate 2-of-3 MAJORITIES (valid consensus — esp. the ambiguous low-acuity
+    # cases that the model needs to learn 'différée'); exclude only no-majority 3-way splits (n_agree<2),
+    # which carry an arbitrary tie-winner label. ESI-only inconsistency is harmless here (training uses
+    # the urgency, not the ESI).
+    train_src = [(r, c) for r, c in cons if c.urgency and not c.is_gold and c.n_agree >= 2]
     rng = random.Random(SEED)
     rng.shuffle(gold)
     if args.stratify:
@@ -177,7 +178,7 @@ def cmd_build(args) -> None:
                                         RECO["fr"][lvl], "fr")
             fh.write(json.dumps(chat_example(r["text"], assistant, "fr", "llm_triage", "triage"),
                                 ensure_ascii=False) + "\n")
-    n_drop = sum(1 for r, c in cons if c.urgency and not c.is_gold and (c.flagged or c.n_agree < 2))
+    n_drop = sum(1 for r, c in cons if c.urgency and not c.is_gold and c.n_agree < 2)
     print(f"eval_gold: {len(eval_pairs)} -> {EVAL_GOLD.name} | sft_train: "
           f"{len(leftover_gold) + len(train_src)} -> {SFT_TRAIN.name} | excluded non-consensus: {n_drop}")
 
