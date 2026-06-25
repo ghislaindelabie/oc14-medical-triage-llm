@@ -306,3 +306,44 @@ could not be.
 
 **Next.** Optional old-vs-new head-to-head on the 300-gold; then the DPO preference-pair step (triage
 chosen/rejected from disagreement cases) → eval → compare SFT vs SFT+DPO.
+
+## Corrected re-run (2026-06-25, post-audit) — the honest headline supersedes 0.81
+
+After the adversarial audit (`docs/KNOWN_ISSUES.md`) the data + eval were fixed: training is now leak-free
+(E2: 66 eval-gold-leaked QA rows dropped) and consensus-clean (E1: 1,193 flagged/3-way/ESI-inconsistent
+cases excluded — train 4,687 = 1,119 clean LLM-triage + 11 vignettes + 3,557 QA), and the eval is now
+**deterministic (greedy), batched (84 min → 11 min), verdict-line-anchored, with Wilson CIs**.
+
+**Corrected eval (greedy, leak-free, stratified 300):**
+
+| metric | value | 95% CI |
+|---|---|---|
+| **macro-F1** | **0.653** | — |
+| macro-precision / recall | 0.79 / 0.68 | — |
+| recall *urgence maximale* (safety) | **0.91** | **[0.84, 0.95]** |
+| recall *urgence modérée* | 0.85 | [0.77, 0.91] |
+| recall *urgence différée* | **0.28** | [0.20, 0.38] |
+| behavioural (disclaimer/format/no-think) | 1.00 | — |
+
+Confusion: maximale 91 ✓ / 9→modérée / **0→différée**; modérée 85 ✓ / 15→maximale / **0→différée**;
+différée 28 ✓ / **72→modérée** / 0→maximale.
+
+**Reading — why 0.81 → 0.65, and why this is the better number.** The 0.81 was inflated by (a) the
+eval-gold→train leak, (b) sampled (non-deterministic) decoding that occasionally landed on the right rare
+class, and (c) noisy non-consensus rows that spuriously propped up *différée*. Greedy + leak-free reveals
+the truth: the model **never under-triages** (0 maximale/modérée → différée — maximally safe) but **systematically
+over-triages low-acuity** (*différée* recall collapses to 0.28; 72/100 pushed up to *modérée*). This is the
+exact over-triage failure mode predicted from the class imbalance — and the audit's "rebalance only if a
+class collapses" trigger is now met. **Root cause of the collapse:** E1 (correctly) removed the noisy
+non-consensus rows, but *différée* cases are disproportionately the ambiguous/flagged ones, so the clean
+train is now *différée*-starved (gold itself is only ~10% différée). Cleaner labels, but a class starved of
+signal.
+
+**Safety framing (unchanged, now with a CI):** maximale recall 0.91, **conservative floor 0.84** — still
+**unacceptable for autonomous ICU/ED triage** (≥1-in-10 emergencies missed at the lower bound). Decision-support
+/ human-in-the-loop only; the value is the *method* + the *progress signal*, not a deployable autonomous triager.
+
+**Next.** (1) **naive-Base baseline** on the same 300-gold (greedy) — the honest progress floor. (2) Address the
+*différée* collapse: rebalance/augment the *différée* training signal (oversample, or relax E1 to keep
+majority-différée even when one rater dissents) and/or use **DPO** to penalise over-triage of low-acuity.
+(3) Re-eval + compare.
