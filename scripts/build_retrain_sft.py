@@ -1,10 +1,13 @@
-"""Build the SFT *retrain* set on the LLM-consensus triage labels.
+"""Build the SFT *retrain* set on the LLM-consensus triage labels — the single clean chokepoint.
 
-Decision (Option B): drop the OLD heuristic triage rows (`source=mediqal_triage` — the same MediQAl
-vignettes we just relabelled by 3-model consensus, so keeping them = contradictory labels for the
-same cases), KEEP the medical-QA + EN breadth (mediqal_mcqu/oeq, medquad, vignettes), and ADD the
-LLM-consensus triage. Writes the combined train/val into data/kaggle_upload/ and copies the
-300-case stratified eval-gold alongside, ready for `kaggle datasets version`.
+  - keep ONLY the medical-QA + EN breadth from the old build (drop ALL kind=triage: the heuristic
+    `mediqal_triage` AND the old vignettes);
+  - re-add ALL hand-written vignettes fresh (E5 — the old build randomly dropped 4/11);
+  - add the clean LLM-consensus triage (cmd_build output, already non-consensus-filtered, E1);
+  - DROP any train/val row whose clinical case is a held-out eval-gold case (E2/E4 leakage fix);
+  - carve a 150-row triage validation slice so val loss reflects the task.
+
+Writes train/val into data/kaggle_upload/ + copies the 300-case eval-gold alongside.
 """
 from __future__ import annotations
 
@@ -14,6 +17,7 @@ import random
 import shutil
 
 from oc14_triage.config import PROCESSED, ROOT, SEED
+from oc14_triage.data.vignettes import sft_triage_rows
 
 UP = ROOT / "data" / "kaggle_upload"
 
@@ -28,29 +32,50 @@ def dump(rows: list[dict], name: str) -> None:
             fh.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
+def _user(r: dict) -> str:
+    m = r["messages"]
+    return m[1]["content"] if len(m) > 1 else ""
+
+
+def _key(text: str) -> str:  # normalized 80-char prefix — robust clinical-case identity
+    return " ".join((text or "").split()).lower()[:80]
+
+
 old_train, old_val, new_tri = load("sft_train.jsonl"), load("sft_val.jsonl"), load("triage_sft_train.jsonl")
+gold = load("triage_eval_gold.jsonl")
 
-# Drop the old heuristic triage from both splits.
-kept = lambda rows: [r for r in rows if r.get("source") != "mediqal_triage"]  # noqa: E731
-old_train_kept, old_val_kept = kept(old_train), kept(old_val)
+# Keep ONLY QA from the old build (drop all kind=triage: heuristic + old vignettes — re-added fresh).
+qa = lambda rows: [r for r in rows if r.get("kind") != "triage"]  # noqa: E731
+old_qa_train, old_qa_val = qa(old_train), qa(old_val)
+vignettes = sft_triage_rows()  # all 11 hand-written, always kept (E5)
 
-# Carve a small triage validation slice so val loss reflects the triage task too.
+# Carve a triage validation slice so val loss reflects the triage task.
 rng = random.Random(SEED)
 rng.shuffle(new_tri)
 tri_val, tri_train = new_tri[:150], new_tri[150:]
 
-train, val = old_train_kept + tri_train, old_val_kept + tri_val
+train = old_qa_train + vignettes + tri_train
+val = old_qa_val + tri_val
+
+# (E2/E4) Drop any train/val row whose clinical case is a held-out eval-gold case (input leak via the
+# QA reshape, which embeds the same clinical_case text under a different task framing).
+gold_keys = {_key(g["user"]) for g in gold}
+n0 = (len(train), len(val))
+train = [r for r in train if _key(_user(r)) not in gold_keys]
+val = [r for r in val if _key(_user(r)) not in gold_keys]
+leaked = (n0[0] - len(train), n0[1] - len(val))
+assert all(_key(_user(r)) not in gold_keys for r in train + val), "eval-gold leak remains"
+
 rng.shuffle(train)
 rng.shuffle(val)
-
 UP.mkdir(parents=True, exist_ok=True)
 dump(train, "sft_train.jsonl")
 dump(val, "sft_val.jsonl")
 shutil.copy(PROCESSED / "triage_eval_gold.jsonl", UP / "triage_eval_gold.jsonl")
 
 comp = lambda rows: dict(collections.Counter(r.get("source") for r in rows))  # noqa: E731
-print(f"train {len(train)} (old-non-triage {len(old_train_kept)} + new-triage {len(tri_train)})")
-print(f"   sources: {comp(train)}")
-print(f"val   {len(val)} (old-non-triage {len(old_val_kept)} + new-triage {len(tri_val)})")
-print(f"dropped heuristic triage: train {len(old_train) - len(old_train_kept)}, val {len(old_val) - len(old_val_kept)}")
-print(f"copied triage_eval_gold.jsonl -> {UP}")
+print(f"train {len(train)}: {comp(train)}")
+print(f"val   {len(val)}: {comp(val)}")
+print(f"vignettes kept: {sum(r.get('source') == 'vignette' for r in train)} (expect {len(vignettes)})")
+print(f"eval-gold leak rows dropped: train {leaked[0]}, val {leaked[1]}")
+print(f"copied triage_eval_gold.jsonl ({len(gold)}) -> {UP}")

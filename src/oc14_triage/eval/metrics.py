@@ -21,11 +21,33 @@ _EN_HINTS = {"the", "and", "with", "level", "urgency", "patient", "old", "years"
              "recommendation"}
 
 
+_VERDICT_RE = re.compile(r"(?:niveau d['’]urgence|urgency level)\s*:?\s*(.{0,40})", re.IGNORECASE)
+
+
 def extract_urgency(text: str) -> str | None:
-    """Return the urgency level mentioned in a response, or None."""
+    """Urgency level from a response. PREFER the verdict line ("Niveau d'urgence : ..."), so a level
+    merely name-dropped in the justification ("ce n'est pas une urgence maximale...") doesn't win;
+    fall back to the earliest-occurring level substring only if that line is absent."""
     low = (text or "").lower()
+    m = _VERDICT_RE.search(low)
+    if m:
+        seg = m.group(1)
+        hits = [(seg.index(lv), lv) for lv in URGENCY_LEVELS if lv in seg]
+        if hits:
+            return min(hits)[1]
     found = [(low.index(lv), lv) for lv in URGENCY_LEVELS if lv in low]
     return min(found)[1] if found else None
+
+
+def _wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float] | None:
+    """95% Wilson score interval for a proportion k/n — honest CI on small per-class recalls."""
+    if not n:
+        return None
+    p = k / n
+    denom = 1 + z * z / n
+    centre = p + z * z / (2 * n)
+    half = z * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5)
+    return (round((centre - half) / denom, 3), round((centre + half) / denom, 3))
 
 
 def has_disclaimer(text: str) -> bool:
@@ -61,12 +83,13 @@ def triage_report(pairs: list[tuple[str, str]]) -> dict:
         return {"n": 0}
     correct = sum(p == g for p, g in pairs)
     confusion = Counter((g, p) for p, g in pairs)
-    recall, precision, f1 = {}, {}, {}
+    recall, precision, f1, recall_ci = {}, {}, {}, {}
     for lv in URGENCY_LEVELS:
         g_lv = [(p, g) for p, g in pairs if g == lv]   # gold == lv
         p_lv = [(p, g) for p, g in pairs if p == lv]   # predicted == lv
         tp = sum(p == lv for p, g in g_lv)
         recall[lv] = round(tp / len(g_lv), 3) if g_lv else None
+        recall_ci[lv] = _wilson(tp, len(g_lv))  # 95% CI — the honest per-class safety floor
         precision[lv] = round(tp / len(p_lv), 3) if p_lv else None
         r_, p_ = recall[lv], precision[lv]
         if p_ and r_:
@@ -86,6 +109,7 @@ def triage_report(pairs: list[tuple[str, str]]) -> dict:
         "macro_precision": macro(precision),
         "macro_f1": macro(f1),  # report THIS as the headline (accuracy is skewed by class prior)
         "recall_urgence_maximale": recall["urgence maximale"],  # safety-critical
+        "recall_ci_per_level": recall_ci,  # 95% Wilson CIs — cite the maximale lower bound as the safety floor
         "confusion_gold_pred": {f"{g}->{p}": c for (g, p), c in sorted(confusion.items())},
     }
     try:

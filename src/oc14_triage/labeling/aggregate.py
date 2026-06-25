@@ -126,5 +126,6 @@ class Aggregate:
             "flagged": sum(1 for c in self.consensuses if c.flagged),
             "non_triage": sum(1 for c in self.consensuses if not c.all_triage),
             "fleiss_kappa": fleiss_kappa(complete),
+            "n_kappa_items": len(complete),  # disclose coverage: kappa is on the complete-rater subset only
             "gold_urgency_dist": dict(Counter(c.urgency for c in gold)),
         }

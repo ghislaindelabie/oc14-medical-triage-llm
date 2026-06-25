@@ -132,17 +132,20 @@ def _dedup(rows: list[dict]) -> list[dict]:
 
 def build() -> dict:
     rng = random.Random(SEED)
-    triage = _dedup(sft_triage_rows() + _mediqal_clinical_triage())
+    vignettes = sft_triage_rows()  # hand-written, high-quality (incl. scarce EN triage)
+    heuristic_triage = _dedup(_mediqal_clinical_triage())
     fr_qa = _dedup(_mediqal_oeq_qa() + _mediqal_mcqu_qa())
     en_qa = _dedup(_medquad_en_qa())
-    for pool in (triage, fr_qa, en_qa):
+    for pool in (heuristic_triage, fr_qa, en_qa):
         rng.shuffle(pool)
 
     total = round(SFT_TARGET / (1 - VAL_FRACTION))  # build a bit extra, then split off val
-    n_triage = min(len(triage), max(TRIAGE_MIN, round(0.28 * total)))
+    n_triage = min(len(vignettes) + len(heuristic_triage), max(TRIAGE_MIN, round(0.28 * total)))
     n_en = min(len(en_qa), round(LANG_TARGET["en"] * total))
     n_fr = max(0, total - n_triage - n_en)
-    selected = triage[:n_triage] + fr_qa[:n_fr] + en_qa[:n_en]
+    # (E5) ALL hand-written vignettes go in unconditionally; fill the rest from the heuristic pool.
+    triage = vignettes + heuristic_triage[:max(0, n_triage - len(vignettes))]
+    selected = triage + fr_qa[:n_fr] + en_qa[:n_en]
     rng.shuffle(selected)
 
     val_n = round(VAL_FRACTION * len(selected))
@@ -166,8 +169,8 @@ def build() -> dict:
                 "source": dict(Counter(r["source"] for r in rows)),
                 "urgency_in_triage": dict(urg)}
 
-    report = {"seed": SEED, "available": {"triage": len(triage), "fr_qa": len(fr_qa),
-              "en_qa": len(en_qa)}, "train": stats(train), "val": stats(val)}
+    report = {"seed": SEED, "available": {"triage": len(vignettes) + len(heuristic_triage),
+              "fr_qa": len(fr_qa), "en_qa": len(en_qa)}, "train": stats(train), "val": stats(val)}
     (PROCESSED / "_sft_stats.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
     return report
 

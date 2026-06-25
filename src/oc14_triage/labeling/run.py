@@ -116,6 +116,7 @@ def cmd_label(args) -> None:
                     "case_id": c["case_id"], "text": c["text"],
                     "urgency": con.urgency, "esi": con.esi, "unanimous": con.unanimous,
                     "is_gold": con.is_gold, "flagged": con.flagged,
+                    "n_agree": con.n_agree, "all_consistent": con.all_consistent,
                     "labels": [vars(x) for x in con.labels],
                 }, ensure_ascii=False) + "\n")
                 n += 1
@@ -126,47 +127,59 @@ def cmd_label(args) -> None:
     _print_cost(clients, len(todo))
 
 
+def _label_from_dict(d: dict) -> Label:
+    """Reconstruct a Label from a stored JSONL label dict — lets cmd_build re-derive consensus with
+    the CURRENT logic (n_agree gate etc.) without re-calling any API."""
+    return Label(model=d.get("model", ""), is_triage_case=bool(d.get("is_triage_case")),
+                 urgency=d.get("urgency"), esi=d.get("esi"), consistent=bool(d.get("consistent")),
+                 justification=d.get("justification", "") or "",
+                 red_flags=tuple(d.get("red_flags") or ()), error=d.get("error"))
+
+
 def cmd_build(args) -> None:
-    """Turn the labelled consensus into a held-out eval-gold set + SFT training rows."""
+    """Held-out eval-gold + SFT training rows, re-deriving consensus from the stored raw labels."""
     if not LABELED.exists():
         raise SystemExit(f"{LABELED} not found — run `label` first.")
-    rows = [json.loads(x) for x in LABELED.read_text(encoding="utf-8").split("\n") if x.strip()]
-    gold = [r for r in rows if r.get("is_gold")]
-    train_src = [r for r in rows if r.get("urgency") and not r.get("is_gold")]
+    raw = [json.loads(x) for x in LABELED.read_text(encoding="utf-8").split("\n") if x.strip()]
+    cons = [(r, consensus(r["case_id"], [_label_from_dict(d) for d in r["labels"]])) for r in raw]
+    gold = [(r, c) for r, c in cons if c.is_gold]
+    # (E1) Training rows need a REAL majority + clean consensus — exclude flagged 3-way splits and
+    # ESI-inconsistent cases, which otherwise inject arbitrary tie-winner labels on the hardest cases.
+    train_src = [(r, c) for r, c in cons
+                 if c.urgency and not c.is_gold and not c.flagged and c.n_agree >= 2]
     rng = random.Random(SEED)
     rng.shuffle(gold)
     if args.stratify:
-        # Balanced eval (per-class) so accuracy/recall aren't dominated by the maximale prior.
         per = args.eval_size // len(URGENCY_LEVELS)
-        eval_rows, eval_ids = [], set()
+        eval_pairs, eval_ids = [], set()
         for lv in URGENCY_LEVELS:
-            take = [r for r in gold if r["urgency"] == lv][:per]
-            eval_rows += take
-            eval_ids.update(r["case_id"] for r in take)
-        leftover_gold = [r for r in gold if r["case_id"] not in eval_ids]
-        print(f"stratified eval: {[(lv, sum(r['urgency'] == lv for r in eval_rows)) for lv in URGENCY_LEVELS]}")
+            take = [(r, c) for r, c in gold if c.urgency == lv][:per]
+            eval_pairs += take
+            eval_ids.update(r["case_id"] for r, _ in take)
+        leftover_gold = [(r, c) for r, c in gold if r["case_id"] not in eval_ids]
+        print(f"stratified eval: {[(lv, sum(c.urgency == lv for _, c in eval_pairs)) for lv in URGENCY_LEVELS]}")
     else:
         n_eval = min(len(gold), args.eval_size)
-        eval_rows, leftover_gold = gold[:n_eval], gold[n_eval:]
+        eval_pairs, leftover_gold = gold[:n_eval], gold[n_eval:]
 
     PROCESSED.mkdir(parents=True, exist_ok=True)
     with open(EVAL_GOLD, "w", encoding="utf-8") as fh:
-        for r in eval_rows:
+        for r, c in eval_pairs:
             fh.write(json.dumps({"case_id": r["case_id"], "user": r["text"],
-                                 "gold_urgency": r["urgency"], "gold_esi": r["esi"]},
+                                 "gold_urgency": c.urgency, "gold_esi": c.esi},
                                 ensure_ascii=False) + "\n")
-    # SFT training rows: leftover gold + majority cases, rendered in the triage response structure.
     with open(SFT_TRAIN, "w", encoding="utf-8") as fh:
-        for r in leftover_gold + train_src:
-            lvl = r["urgency"]
-            justif = next((x["justification"] for x in r["labels"]
-                           if x.get("urgency") == lvl and x.get("justification")), "")
+        for r, c in leftover_gold + train_src:
+            lvl = c.urgency
+            justif = next((d.get("justification") for d in r["labels"]
+                           if d.get("urgency") == lvl and d.get("justification")), "")
             assistant = triage_response(lvl, justif or "Sur la base du tableau clinique présenté.",
                                         RECO["fr"][lvl], "fr")
             fh.write(json.dumps(chat_example(r["text"], assistant, "fr", "llm_triage", "triage"),
                                 ensure_ascii=False) + "\n")
-    print(f"eval_gold: {len(eval_rows)} -> {EVAL_GOLD.name} | sft_train: "
-          f"{len(leftover_gold) + len(train_src)} -> {SFT_TRAIN.name}")
+    n_drop = sum(1 for r, c in cons if c.urgency and not c.is_gold and (c.flagged or c.n_agree < 2))
+    print(f"eval_gold: {len(eval_pairs)} -> {EVAL_GOLD.name} | sft_train: "
+          f"{len(leftover_gold) + len(train_src)} -> {SFT_TRAIN.name} | excluded non-consensus: {n_drop}")
 
 
 _LETTER = re.compile(r"\b([A-E])\b")
