@@ -1,0 +1,14 @@
+{
+  "id": "ghislaindelabie/oc14-dpo-eval",
+  "title": "OC14 DPO eval",
+  "code_file": "oc14-dpo-eval.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["ghislaindelabie/oc14-triage-data"],
+  "kernel_sources": ["ghislaindelabie/oc14-dpo"],
+  "competition_sources": [],
+  "model_sources": []
+}

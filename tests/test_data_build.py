@@ -6,12 +6,12 @@ import json
 
 import pytest
 
-from oc14_triage.config import PROCESSED, ROOT, SYSTEM_PROMPT
+from oc14_triage.config import ROOT, SYSTEM_PROMPT
 
 UPLOAD = ROOT / "data" / "kaggle_upload"
 SFT_TRAIN = UPLOAD / "sft_train.jsonl"
 EVAL_GOLD = UPLOAD / "triage_eval_gold.jsonl"
-DPO_TRAIN = PROCESSED / "dpo_train.jsonl"
+DPO_TRAIN = UPLOAD / "dpo_train.jsonl"
 
 
 def _load(path):

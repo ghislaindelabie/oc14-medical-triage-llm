@@ -490,3 +490,4 @@ if __name__ == "__main__":
     build(EVAL_CELLS, HERE / "oc14-instruct-eval" / "oc14-instruct-eval.ipynb")
     build(EVAL_CELLS, HERE / "oc14-instruct-native-eval" / "oc14-instruct-native-eval.ipynb")
     build(baseline_cells(), HERE / "oc14-base-eval" / "oc14-base-eval.ipynb")
+    build(EVAL_CELLS, HERE / "oc14-dpo-eval" / "oc14-dpo-eval.ipynb")  # scores the DPO adapter (kernel_sources)
