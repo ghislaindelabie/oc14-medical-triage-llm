@@ -383,3 +383,29 @@ the honest, dramatic progress signal.
 under-triage; sources = the 11 clear-cut hand-written safety pairs + unambiguous under-triaged red-flag
 cases — NOT the ambiguous 2-1 splits) to drive the lone maximale→différée back to 0 while keeping
 *différée* recall.
+
+## DPO attempt #2 (2026-06-26) — instructive negative; ship SFT v9
+
+Built a **direction-balanced** triage-preference set (`scripts/build_dpo_pairs.py`): chosen = correct
+gold level, rejected = a wrong adjacent level, same generic justification on both sides; ~2:1
+under:over (under 112 + 11 safety / over 56 / modérée 56 mixed), 211 train / 24 val, eval-gold excluded.
+DPO on the v9 SFT adapter (1 epoch), merged, scored on the same 300-gold.
+
+| n=300, greedy | macro-F1 | maximale R | modérée R | différée R | κ |
+|---|--:|--:|--:|--:|--:|
+| **SFT v9** | **0.822** | 0.90 | **0.85** | 0.71 | 0.73 |
+| SFT + DPO | 0.799 | 0.92 | **0.55** | 0.96 | 0.72 |
+
+DPO confusion: maximale 92 ✓ / 7→mod / **1→diff**; modérée 55 ✓ / **20→max / 25→diff**; différée 96 ✓ / 4→mod / 0→max.
+
+**Reading.** DPO sharpened the *extremes* (*différée* recall 0.71→**0.96**, maximale 0.90→0.92) but
+**collapsed the middle** (*modérée* 0.85→**0.55**), net macro-F1 **0.82→0.80**, and did **not** fix the lone
+maximale→différée. **Mechanism (design lesson):** *modérée* is the `rejected` level for BOTH the
+maximale-under and différée-over pairs, so it appeared as "the wrong answer" ~168× vs "right" 56× → DPO
+learned to **avoid the middle class**. Adjacent-level preference pairs structurally hammer the middle; a
+future fix would reject the *far* level or balance modérée's chosen/rejected count. **Decision:** the
+brief's SFT→DPO arc is demonstrated with an honest result; **SFT v9 (macro-F1 0.82) is the served
+deliverable** (best balanced; DPO traded the middle for the extremes with no net gain).
+
+**Next.** Serve SFT v9: merge to 16-bit → FastAPI `/triage` wrapper (smoke-test on P710 CPU) →
+RunPod serverless vLLM (model via private HF repo) → CI deploy → Presidio/GDPR pass → report.

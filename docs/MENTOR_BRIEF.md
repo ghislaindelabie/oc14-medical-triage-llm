@@ -43,12 +43,15 @@ le format dans ~32 % des cas, ne distingue jamais les niveaux bas, n'émet jamai
 décodage échantillonné) → **retiré** après un **audit adverse** du pipeline ; le 0,82 actuel est
 reproductible et sans fuite. **Compromis sécurité/précision assumé** : restaurer la classe *différée*
 (rappel 0,28 → 0,71) a réintroduit un peu de sous-triage — **1 cas *urgence maximale* → *différée*** (une
-urgence vitale rétrogradée) — cible précise de l'étape **DPO** à venir (coût asymétrique : le sous-triage
-est davantage pénalisé).
+urgence vitale rétrogradée). J'ai ensuite testé un **DPO** ciblé (préférences de triage équilibrées) : il
+améliore les extrêmes (*différée* 0,71 → 0,96) mais **affaisse la classe intermédiaire** (*modérée*
+0,85 → 0,55 ; macro-F1 0,80 < 0,82) → **je conserve le SFT**. Le DPO est livré comme **résultat honnête** :
+la technique est démontrée et l'échec analysé (les paires de niveaux adjacents pénalisent structurellement
+la classe du milieu).
 
 ## 4. Ce qu'il reste à finaliser
-1. **Corriger le sur-triage** : rééquilibrer le signal *différée* (en cours) + **DPO** ciblé
-   (pénaliser sous- ET sur-triage, pondéré par le coût) ; ré-évaluer.
+1. ✓ **Sur-triage corrigé** (rééquilibrage → *différée* 0,71) et **DPO testé** (résultat honnête,
+   modèle SFT conservé) — fait.
 2. **Serving** : vLLM (RunPod ou Modal) + wrapper FastAPI (+ injection du prompt système) ; **étape de
    déploiement CI**.
 3. **RGPD** : passe Presidio + journal d'audit + carte de données.
