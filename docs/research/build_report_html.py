@@ -263,3 +263,9 @@ if __name__ == "__main__":
     finaliser, et pourquoi c'est prêt à présenter. Détails complets dans le rapport.</p>"""
     build_report([(DOCS / "MENTOR_BRIEF.md", "", "")], VAULT / "OC14-mentor-brief.html",
                  "OC14 · Note de synthèse pour le mentor", "OC14 · Note mentor", brief_intro)
+
+    show_intro = """<h1>OC14 — Manuel de présentation au mentor</h1>
+    <p class="note">Plan de démonstration (~20 min) : quoi montrer, dans quel ordre, comment introduire
+    le code. Tout est privé/tailnet → partage d'écran. Garde cette page (ou la Note de synthèse) ouverte.</p>"""
+    build_report([(DOCS / "MENTOR_SHOWCASE.md", "", "")], VAULT / "OC14-mentor-showcase.html",
+                 "OC14 · Manuel de présentation au mentor", "OC14 · Démo mentor", show_intro)
