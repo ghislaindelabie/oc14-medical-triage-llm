@@ -22,9 +22,25 @@ state*. Triage is the central task (not medical Q&A); `.md` is the source of tru
   recall, disclaimer/format/no-`<think>`/language-match rates). Unit-tested.
 - ✅ **GDPR/provenance card** generator (`data/card.py` → `data/cards/DATA_CARD.md`).
 - ✅ **CI** (`.github/workflows/ci.yml`): ruff + pytest (data-dependent tests skip without data).
+- ✅ **Credentials** (2026-06-18): Kaggle API token + W&B key stored in `~/.env`, both **verified live**. Data **staged** as a private Kaggle dataset `ghislaindelabie/oc14-triage-data`.
+- ✅ **SFT-LoRA notebook VALIDATED on Kaggle T4** (`notebooks/oc14-sft-lora/`): 5-step smoke ran `COMPLETE` — data resolves, ChatML template applies, train-on-responses-only works, adapter saves, generation emits triage format (loss 1.78 @ step 5). Full run launched.
+  - Kaggle landmines solved: push with `--accelerator NvidiaTeslaT4` (P100 default is too old); cu128 torch install; datasets mount at `/kaggle/input/datasets/<owner>/<slug>/` (glob to find); Qwen3-Base has **no** chat_template → set ChatML explicitly.
 
-**Not yet (needs decisions and/or credentials — see below):**
-- ⬜ Training notebooks (Kaggle/Colab): SFT-LoRA + DPO for Base **and** Instruct.
+- ✅ **Full SFT run (Base) COMPLETE** (2026-06-18): train_loss **0.845** (from ~1.78), 314 steps / 2 epochs, ~79 min on T4 (free). LoRA adapter (69 MB) saved + persisted at `models/sft-base-lora/` (gitignored; ChatML template propagated to the saved tokenizer). Push to HF pending `HF_TOKEN`.
+  - ⚠️ **Inference config to fix before eval/serving:** generations must **stop on `<|im_end|>`** (eos is `<|endoftext|>`) or the small model runs past the answer into repetition; and eval must use the **full trained `SYSTEM_PROMPT_FR`** (a shortened prompt drifts the format). Both are the verified Decision-H items.
+
+- ✅ **DPO run COMPLETE but REGRESSED** (2026-06-19): SFT+DPO scored 0.33 vs SFT 0.67 and **missed both emergencies**; root cause = DPO set was ~99% UltraMedical (1,489 vs 11 safety pairs) → optimised GPT verbosity. Merge succeeded (`models/dpo-merged-16bit/`). **Per Decision-C fallback, the SFT model is the served deliverable.** Fix path (later): more safety pairs + safety-weighted DPO mix.
+
+- ✅ **SFT merged to 16-bit** (`models/sft-base-merged-16bit/`, 3.3 GB) — the vLLM-servable model.
+- ✅ **Instruct comparison arm trained + eval'd** (2026-06-20): Instruct SFT **0.33** (missed both emergencies) vs **Base SFT 0.67** (both caught), near-identical train loss → **Base wins, validates the brief's Base choice**. Base SFT stays the deliverable.
+
+- ✅ **Multi-LLM triage-labelling pipeline built + key-free tested** (`src/oc14_triage/labeling/`, `docs/TRIAGE_CRITERIA.md`): cited rubric → 3 LLMs label real MediQAl vignettes (3-level + ESI/call) → consensus + Fleiss κ + MCQU calibration; `label`/`build`/`calibrate` CLIs; 28 tests, ruff clean, mock end-to-end OK. **Waiting on:** 3 API keys + tier/size confirm → calibrate → label 3,075 → retrain SFT on LLM labels → eval gold (~300).
+
+**Not yet (the "fuller eval" triad):**
+- ⬜ Option 1: FedMML reference-dataset check. Option 2: `medical-triage-500` ablation. Option 3: run the LLM-labelling pipeline above (needs keys).
+- ⬜ Serving: vLLM (**RunPod or Modal** — user deciding) + FastAPI wrapper on the merged SFT model; CI deploy step.
+- ⬜ Presidio pass; report.
+- ⬜ HF publish (dataset + SFT weights) — **deferred until user's full review**; pushable from P710 (weights local, `HF_TOKEN` set).
 - ⬜ Merge + offline vLLM verify + push to HF.
 - ⬜ Serving: RunPod serverless (stock worker-vllm) + thin FastAPI safety wrapper.
 - ⬜ CI deploy step (build/push wrapper image; documented manual RunPod redeploy).
