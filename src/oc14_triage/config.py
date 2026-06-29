@@ -15,6 +15,7 @@ DATA = ROOT / "data"
 RAW = DATA / "raw"  # untouched downloads, one folder per source
 INTERIM = DATA / "interim"  # normalised but not yet split
 PROCESSED = DATA / "processed"  # final train/val/test JSONL ready for training
+KAGGLE_UPLOAD = DATA / "kaggle_upload"  # shipped train/val/eval JSONL (the trained deliverable)
 CARDS = DATA / "cards"  # provenance + GDPR data cards (versioned)
 EVAL_DIR = DATA / "eval"  # hand-written clinical-eval vignettes + probes
 

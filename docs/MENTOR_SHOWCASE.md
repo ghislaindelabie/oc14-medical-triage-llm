@@ -1,12 +1,12 @@
 # OC14 — Manuel de présentation au mentor
 
 Guide de démonstration (~20 min) : quoi montrer, dans quel ordre, et comment présenter le code
-efficacement. Tout est **privé / tailnet** → la séance se fait en **partage d'écran** (tu pilotes, le
+efficacement. Le **code est public** (GitHub) ; les notebooks et données restent privés (Kaggle). La séance reste en **partage d'écran** pour le pas-à-pas (tu pilotes, le
 mentor regarde). Garde ce plan + la *Note de synthèse* ouverts à côté.
 
 ## Liens à ouvrir (onglets, avant la séance)
-- **GitHub (codebase)** : https://github.com/ghislaindelabie/oc14-medical-triage-llm — branche `feat/data-prep-and-scaffold`
-- **W&B (suivi d'expériences)** : https://wandb.ai/ghislaindelabie/oc14-triage-eval
+- **GitHub (codebase, public)** : https://github.com/ghislaindelabie/oc14-medical-triage-llm — branche `main` (PR #2 fusionnée).
+- **W&B (comparaison des résultats d'éval)** : https://wandb.ai/ghislaindelabie/oc14-triage-eval
 - **Kaggle — entraînement SFT** : https://www.kaggle.com/code/ghislaindelabie/oc14-sft-lora-qwen3-1-7b
 - **Kaggle — éval** : https://www.kaggle.com/code/ghislaindelabie/oc14-sft-eval · **dataset** : https://www.kaggle.com/datasets/ghislaindelabie/oc14-triage-data
 - **Note de synthèse (toi, mobile)** : `…:8445/doc/oc14-mentor-brief` — ta antisèche
@@ -30,7 +30,7 @@ affaisse le milieu) → je conserve le SFT. *(Montrer qu'on maîtrise la techniq
 un échec = un atout.)*
 
 **4. Éval & rigueur (5 min) — le différenciateur.** Ouvre le **dashboard W&B** : la comparaison
-**Base 0,19 → SFT 0,82** (et DPO 0,80) = le **vrai signal de progrès**. Explique l'éval : gold
+**Base 0,19 → SFT 0,82** (et DPO 0,80) = le **vrai signal de progrès**. *(Cadre honnête : c'est un **tableau de comparaison des résultats** — résumés d'éval loggés manuellement depuis P710 ; la capture des courbes d'entraînement en live est câblée mais en attente d'un Secret Kaggle.)* Explique l'éval : gold
 **stratifié**, décodage **greedy** (déterministe), **macro-F1** + rappel/précision par classe + **IC de
 Wilson** + matrice de confusion. Puis le moment fort : **l'audit adverse** (`docs/KNOWN_ISSUES.md`) qui a
 détecté un **0,81 gonflé** (fuite + échantillonnage) → corrigé en **0,82 honnête**. Termine par les

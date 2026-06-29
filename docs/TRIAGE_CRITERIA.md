@@ -1,8 +1,12 @@
 # OC14 — Triage criteria (the medical core to review)
 
-> **Status:** intermediary, 2026-06-24. **Review this first** — the entire triage dataset (training +
+> **Status:** intermediary, 2026-06-29. **Review this first** — the entire triage dataset (training +
 > eval gold) rests on these criteria. Canonical source = `src/oc14_triage/labeling/rubric.py`
 > (the full ~2-page rubric is `SYSTEM_PROMPT` there).
+
+**Applied (2026-06-24):** the rubric was run over 3,075 real MediQAl vignettes × 3 models → Fleiss κ≈0.67
+(substantial), yielding the 300-case stratified eval-gold + the LLM-labelled SFT triage set. Details in
+DEVELOPMENT_JOURNAL.md.
 
 ## What this is
 The rubric three frontier models apply to **real MediQAl French clinical vignettes** to assign a
@@ -41,8 +45,8 @@ grade, not front-door nurse triage, so it's not used as the taxonomy.)
 ## How labels are made trustworthy (without a clinician)
 - **3-model consensus.** Keep **unanimous + ESI-consistent** cases as **gold** (held-out eval); majority cases → training; report **Fleiss' κ** (inter-model agreement) as the credibility metric.
 - **Self-consistency check.** Each answer's ESI must bucket to its stated 3-level; mismatches are flagged.
-- **Labeler calibration (floor check).** Each model first answers ~200 **real MediQAl MCQU** exam questions vs the **real answer key** → a measured French-medical-competence number. *Necessary, not sufficient* (knowledge ≠ triage), but a poor score disqualifies a labeler.
-- **Cross-method triangulation.** Compare the consensus to `medical-triage-500`'s independent rule-based labels — agreement across *independent* methods is the closest thing to validity we have.
+- **Labeler calibration (floor check) — (planned — not yet run).** Each model would first answer ~200 **real MediQAl MCQU** exam questions vs the **real answer key** → a measured French-medical-competence number. *Necessary, not sufficient* (knowledge ≠ triage), but a poor score disqualifies a labeler. Per-model numbers were not recorded for the shipped run.
+- **Cross-method triangulation — (planned; not yet run).** Compare the consensus to `medical-triage-500`'s independent rule-based labels — agreement across *independent* methods is the closest thing to validity we have.
 
 ## Honest limitations (state in the report)
 - This is a **silver standard**, not clinical validation — no clinician, no validated FR triage gold exists.

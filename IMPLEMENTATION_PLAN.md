@@ -6,18 +6,28 @@ state*. Triage is the central task (not medical Q&A); `.md` is the source of tru
 
 ---
 
-## Current state (2026-06-16)
+## Current state (2026-06-29)
+
+**Done since 2026-06-20 (LLM-consensus retrain supersedes the 2026-06-18→20 snapshot below):**
+- ✅ **LLM-consensus triage labelling** (3 models, Fleiss κ≈0.67); 300-case stratified gold + LLM-labelled train.
+- ✅ **Adversarial audit** (`docs/KNOWN_ISSUES.md`): leak-free, greedy, batched eval.
+- ✅ **SFT v9 macro-F1 0.82 — SERVED deliverable.** Base baseline 0.19. DPO #2 0.80 — instructive negative, **NOT shipped**.
+- ✅ **FastAPI `/triage` wrapper built + unit-tested**; Dockerfile + README in `src/oc14_triage/serving/`.
+- ✅ **Repo PUBLIC** (default `main`, PR #2 squash-merged ~2026-06-27) — https://github.com/ghislaindelabie/oc14-medical-triage-llm.
+- ✅ **W&B results-comparison dashboard** (5 arms, manual eval summaries — **NOT live curves**) — https://wandb.ai/ghislaindelabie/oc14-triage-eval.
 
 **Done / scaffolded and runnable (CPU on P710, no credentials needed):**
 - ✅ Repo scaffold: `uv` project, `src/oc14_triage`, ruff + pytest, `.gitignore` (data not committed).
 - ✅ **Data collected**: MediQAl (FR, CC-BY-4.0 — mcqu/mcqm/oeq), MedQuAD (EN), UltraMedical-Preference
   (EN, MIT) downloaded to `data/raw/` with a verified-schema inventory (`data/raw/_inventory.json`).
   FrenchMedMCQA **disabled** (ships a loader script modern `datasets` rejects; MediQAl covers FR amply).
-- ✅ **SFT dataset built** (`data/processed/sft_{train,val}.jsonl`): 5,000 train / 556 val,
-  ~80% FR / 20% EN, **triage = 28%** (urgency→justification→recommendation), built from
-  hand-written bilingual vignettes + MediQAl clinical-case rows reshaped into triage + medical-QA.
-- ✅ **DPO dataset built** (`data/processed/dpo_{train,val}.jsonl`): 1,350 train / 150 val =
-  hand-written **bilingual safety pairs** + filtered UltraMedical (score-gap ≥0.5).
+- ✅ **SFT dataset built** (shipped: `data/kaggle_upload/sft_{train,val}.jsonl`, via `scripts/build_retrain_sft.py`):
+  **5,598 train / 562 val**, **82% FR**, **triage 2,041 / QA 3,557** (urgency→justification→recommendation);
+  sources mediqal_mcqu 2,166 · llm_triage 1,953 · medquad 995 · mediqal_oeq 396 · vignette 88. *(The old
+  v1 `data/processed/` 5,000/556 / 28%-triage set is retracted.)*
+- ✅ **DPO dataset built** (shipped: `data/kaggle_upload/dpo_{train,val}.jsonl`, via `scripts/build_dpo_pairs.py`):
+  **211 train / 24 val** = direction-balanced triage pairs, **no UltraMedical**. *(The old v1 1,350/150
+  UltraMedical-heavy set is retracted.)*
 - ✅ **Eval metrics** (`eval/metrics.py`): triage-first (urgency agreement + κ, red-flag escalation
   recall, disclaimer/format/no-`<think>`/language-match rates). Unit-tested.
 - ✅ **GDPR/provenance card** generator (`data/card.py` → `data/cards/DATA_CARD.md`).
@@ -25,6 +35,8 @@ state*. Triage is the central task (not medical Q&A); `.md` is the source of tru
 - ✅ **Credentials** (2026-06-18): Kaggle API token + W&B key stored in `~/.env`, both **verified live**. Data **staged** as a private Kaggle dataset `ghislaindelabie/oc14-triage-data`.
 - ✅ **SFT-LoRA notebook VALIDATED on Kaggle T4** (`notebooks/oc14-sft-lora/`): 5-step smoke ran `COMPLETE` — data resolves, ChatML template applies, train-on-responses-only works, adapter saves, generation emits triage format (loss 1.78 @ step 5). Full run launched.
   - Kaggle landmines solved: push with `--accelerator NvidiaTeslaT4` (P100 default is too old); cu128 torch install; datasets mount at `/kaggle/input/datasets/<owner>/<slug>/` (glob to find); Qwen3-Base has **no** chat_template → set ChatML explicitly.
+
+> ⚠️ The 2026-06-18→20 snapshot below (train_loss 0.845, DPO regressed 0.33 vs 0.67, Instruct 0.33 vs Base 0.67) is **superseded by the LLM-consensus retrain** (see "Done since 2026-06-20"). Kept for history.
 
 - ✅ **Full SFT run (Base) COMPLETE** (2026-06-18): train_loss **0.845** (from ~1.78), 314 steps / 2 epochs, ~79 min on T4 (free). LoRA adapter (69 MB) saved + persisted at `models/sft-base-lora/` (gitignored; ChatML template propagated to the saved tokenizer). Push to HF pending `HF_TOKEN`.
   - ⚠️ **Inference config to fix before eval/serving:** generations must **stop on `<|im_end|>`** (eos is `<|endoftext|>`) or the small model runs past the answer into repetition; and eval must use the **full trained `SYSTEM_PROMPT_FR`** (a shortened prompt drifts the format). Both are the verified Decision-H items.
@@ -36,17 +48,11 @@ state*. Triage is the central task (not medical Q&A); `.md` is the source of tru
 
 - ✅ **Multi-LLM triage-labelling pipeline built + key-free tested** (`src/oc14_triage/labeling/`, `docs/TRIAGE_CRITERIA.md`): cited rubric → 3 LLMs label real MediQAl vignettes (3-level + ESI/call) → consensus + Fleiss κ + MCQU calibration; `label`/`build`/`calibrate` CLIs; 28 tests, ruff clean, mock end-to-end OK. **Waiting on:** 3 API keys + tier/size confirm → calibrate → label 3,075 → retrain SFT on LLM labels → eval gold (~300).
 
-**Not yet (the "fuller eval" triad):**
-- ⬜ Option 1: FedMML reference-dataset check. Option 2: `medical-triage-500` ablation. Option 3: run the LLM-labelling pipeline above (needs keys).
-- ⬜ Serving: vLLM (**RunPod or Modal** — user deciding) + FastAPI wrapper on the merged SFT model; CI deploy step.
-- ⬜ Presidio pass; report.
-- ⬜ HF publish (dataset + SFT weights) — **deferred until user's full review**; pushable from P710 (weights local, `HF_TOKEN` set).
-- ⬜ Merge + offline vLLM verify + push to HF.
-- ⬜ Serving: RunPod serverless (stock worker-vllm) + thin FastAPI safety wrapper.
-- ⬜ CI deploy step (build/push wrapper image; documented manual RunPod redeploy).
-- ⬜ Eval harness run against the live endpoint; cost (training + deployment) measurement.
-- ⬜ Presidio verification pass + audit log (`data/anonymize.py`).
-- ⬜ 20-page report (build incrementally as a running log).
+**Remaining work:**
+- ⬜ **Live endpoint deploy** (needs RunPod/Modal key) — wrapper is built + unit-tested, only the live deploy is pending.
+- ⬜ **W&B live training curves** (attach `WANDB_API_KEY` as a Kaggle Secret + re-run the SFT notebook).
+- ⬜ **Presidio/GDPR verification pass** + audit log.
+- ⬜ **Final ≤20-page report.**
 
 ---
 
@@ -58,17 +64,16 @@ state*. Triage is the central task (not medical Q&A); `.md` is the source of tru
 - [ ] Grow EN triage vignettes to ~100–150 and keep the eval set bilingual (mentor §0b). *(needs review/clinical input)*
 - [ ] (optional) Push the processed dataset to HF Hub. *(needs `HF_TOKEN`)*
 
-### 2. Fine-tuned model (SFT+LoRA → DPO) — **blocked on GPU/Kaggle**
-- [ ] `notebooks/sft_lora.ipynb` (Unsloth, Qwen3-1.7B): apply chat template; **read `tokenizer.eos_token`**
-  (it's `<|endoftext|>`; train to emit `<|im_end|>`), loss on assistant tokens only; `save_steps=50`,
-  push adapter to HF each interval; `set_seed(3407)`; W&B.
-- [ ] `notebooks/dpo.ipynb`: DPO on the **adapter-attached** SFT model (`ref_model=None`), then **merge once**.
-- [ ] Run for **Base (primary)**; repeat SFT+eval for **Instruct (comparison)**.
-- [ ] Offline `vllm.LLM().generate()` verify in-notebook before push.
+### 2. Fine-tuned model (SFT+LoRA → DPO) — **done**
+- [x] `notebooks/oc14-sft-lora/` (Unsloth, Qwen3-1.7B): apply chat template; **read `tokenizer.eos_token`**
+  (it's `<|endoftext|>`; train to emit `<|im_end|>`), loss on assistant tokens only; `save_steps=50`; `set_seed(3407)`.
+- [x] DPO on the **adapter-attached** SFT model (`ref_model=None`), then **merge once** — DPO #2 = 0.80, instructive negative, NOT shipped.
+- [x] Run for **Base (primary)**; SFT v9 (LLM-consensus labels) = macro-F1 **0.82**, the SERVED deliverable.
+- [x] Offline verify before push.
 
-### 3. Cloud endpoint (vLLM) — **blocked on RunPod**
-- [ ] RunPod serverless, stock `runpod-workers/worker-vllm`, `--default-chat-template-kwargs '{"enable_thinking": false}'`, vLLM ≥0.9.0.
-- [ ] Thin FastAPI `/triage` wrapper (`serving/`): inject system prompt + `enable_thinking=False` + audit log.
+### 3. Cloud endpoint (vLLM) — **wrapper built; live deploy pending key**
+- [ ] RunPod/Modal serverless, stock `worker-vllm`, `--default-chat-template-kwargs '{"enable_thinking": false}'`, vLLM ≥0.9.0 — **pending RunPod/Modal key**.
+- [x] Thin FastAPI `/triage` wrapper (`src/oc14_triage/serving/`): inject system prompt + `enable_thinking=False` + audit log — built + unit-tested (Dockerfile + README).
 
 ### 4. CI/CD — **partially done**
 - [x] lint + test. [ ] build/push **wrapper** image to GHCR. [ ] documented manual RunPod redeploy (+ optional `workflow_dispatch` live smoke).
@@ -97,13 +102,13 @@ state*. Triage is the central task (not medical Q&A); `.md` is the source of tru
 
 | Credential | For | Status |
 |---|---|---|
-| `HF_TOKEN` (write) | rate-limit-free downloads; push dataset + model | optional now, needed to push |
-| Kaggle (phone-verified + `kaggle.json`) | free T4 training | needed Day 2 |
-| `WANDB_API_KEY` | experiment tracking | needed Day 2 |
-| RunPod API key (Alien) | serverless vLLM endpoint | needed Day 4 |
-| GitHub repo | CI/CD (gh authed as ghislaindelabie) | default: private `oc14-medical-triage-llm` |
+| `HF_TOKEN` (write) | rate-limit-free downloads; push dataset + model | optional |
+| Kaggle (phone-verified + `kaggle.json`) | free T4 training | ✅ obtained / used (SFT + eval ran) |
+| `WANDB_API_KEY` | experiment tracking | ✅ obtained (used for the results-comparison dashboard; live training curves still pending a Kaggle Secret re-run) |
+| RunPod / Modal API key | serverless vLLM endpoint | ⬜ still pending (only blocker for the live endpoint) |
+| GitHub repo | CI/CD (gh authed as ghislaindelabie) | ✅ **public** `oc14-medical-triage-llm` (default `main`) |
 
-## Decisions (updated 2026-06-16)
+## Decisions (updated 2026-06-29)
 1. ✅ **Base = primary, Instruct = comparison** (confirmed). The served/deployed model is Base
    (SFT+LoRA → DPO → merge); Instruct gets the same SFT + eval as the comparison arm.
 2. ⏸ Rubric specifics (formal DPIA vs report RGPD section, numeric pass thresholds, DPO graded

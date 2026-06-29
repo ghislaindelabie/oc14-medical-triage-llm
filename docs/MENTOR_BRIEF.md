@@ -8,7 +8,9 @@
 
 ## 1. Le projet & où j'en suis
 La tâche centrale est le **triage** (et non le Q&A médical) : à partir d'une présentation clinique,
-classer l'urgence sur **3 niveaux** (maximale / modérée / différée). État d'avancement :
+classer l'urgence sur **3 niveaux** (maximale / modérée / différée).
+Le dépôt est désormais **public** (github.com/ghislaindelabie/oc14-medical-triage-llm), branche par défaut `main`.
+État d'avancement :
 - J'ai **collecté les données** (MediQAl FR, MedQuAD EN, UltraMedical) ; l'anonymisation RGPD (Presidio) est prévue.
 - J'ai **construit un jeu d'évaluation rigoureux** : 3 075 vignettes cliniques réelles labellisées par
   **consensus de 3 LLM de pointe**, gold stratifié 100/100/100.
@@ -52,8 +54,7 @@ la classe du milieu).
 ## 4. Ce qu'il reste à finaliser
 1. ✓ **Sur-triage corrigé** (rééquilibrage → *différée* 0,71) et **DPO testé** (résultat honnête,
    modèle SFT conservé) — fait.
-2. **Serving** : vLLM (RunPod ou Modal) + wrapper FastAPI (+ injection du prompt système) ; **étape de
-   déploiement CI**.
+2. **Serving** : wrapper FastAPI `/triage` **construit et testé** (backend vLLM mocké) ; endpoint live vLLM (RunPod/Modal) = dernière étape (en attente d'une clé). Étape de déploiement CI à câbler.
 3. **RGPD** : passe Presidio + journal d'audit + carte de données.
 4. **Rapport ≤20 pages** (déjà tenu comme journal de bord).
 5. *(optionnel)* éval **indépendante** sur `medical-triage-500` + tranche d'évaluation **EN**.
