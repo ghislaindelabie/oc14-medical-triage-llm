@@ -26,3 +26,41 @@ jobs:
         run: uv run ruff check .
       - name: Pytest
         run: uv run pytest
+
+  # Manual (workflow_dispatch) deploy: build+push the agent image to GHCR, then a RunPod
+  # endpoint refresh gated behind the RUNPOD_API_KEY secret (no-ops without it). Keeps
+  # deployment automated + reproducible without requiring the secret to run CI on every push.
+  deploy:
+    if: github.event_name == 'workflow_dispatch'
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push agent image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: serving/Dockerfile.agent
+          push: true
+          tags: ghcr.io/${{ github.repository }}/triage-agent:latest
+      - name: Refresh RunPod endpoint (skipped if secret absent)
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          RUNPOD_ENDPOINT_ID: ${{ secrets.RUNPOD_ENDPOINT_ID }}
+        run: |
+          if [ -z "$RUNPOD_API_KEY" ] || [ -z "$RUNPOD_ENDPOINT_ID" ]; then
+            echo "RUNPOD_API_KEY/ENDPOINT_ID not set — skipping live redeploy (documented manual step)."
+            exit 0
+          fi
+          echo "Warming the RunPod vLLM endpoint…"
+          curl -fsS "https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}/health" \
+            -H "Authorization: Bearer ${RUNPOD_API_KEY}" || echo "endpoint cold / not reachable yet"

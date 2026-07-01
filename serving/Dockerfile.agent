@@ -1,0 +1,22 @@
+# Agentic triage service image: the FastAPI /session/* API hosting the LangGraph chain.
+# The vLLM MODEL backend runs SEPARATELY (RunPod serverless / local) behind its
+# OpenAI-compatible API — point this at it via VLLM_BASE_URL (or set OC14_TRIAGE_STUB=1).
+#
+# Build from the REPO ROOT:  docker build -f serving/Dockerfile.agent -t oc14-triage-agent .
+# Run:  docker run -p 8080:8080 -e VLLM_BASE_URL=https://<endpoint>/v1 -e OC14_MODEL_ID=<model> \
+#                  oc14-triage-agent
+FROM python:3.12-slim
+WORKDIR /app
+# build tooling for spaCy/presidio wheels
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+COPY pyproject.toml ./
+COPY src ./src
+RUN pip install --no-cache-dir ".[agent,anon]" \
+    && python -m spacy download fr_core_news_md \
+    && python -m spacy download en_core_web_sm
+ENV VLLM_BASE_URL=http://localhost:8000/v1 \
+    OC14_MODEL_ID=oc14-triage \
+    OC14_AGENT_DB=/data/agent_sessions.db
+EXPOSE 8080
+CMD ["uvicorn", "oc14_triage.agent.service:app", "--host", "0.0.0.0", "--port", "8080"]
