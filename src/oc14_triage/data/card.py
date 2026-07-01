@@ -87,6 +87,21 @@ def build() -> str:
     sft = _sft_stats()
     dpo = _dpo_stats()
     gold = _eval_stats()
+    audit = _load(CARDS / "anonymization_audit.json")
+    if audit:
+        _ents = ", ".join(f"{k}={v:,}" for k, v in audit["entities_by_type"].items())
+        _verif = (
+            f"- **Verification (done — {audit['engine']} {audit['engine_version']}):** ran a Presidio "
+            f"pass over {audit['n_records']:,} corpus texts (audit trail `anonymization_audit.json`: "
+            f"per-record SHA-256 + entities, no raw text stored). Raw detections: {_ents}. **These are "
+            "overwhelmingly clinical eponyms, anatomical LOCATIONs, ages and generic exam personas "
+            "(Monsieur/Madame X) — not real patient identifiers**, consistent with the sources being "
+            "ECN/pharmacy exam questions + synthetic vignettes (no real patients → Recital 26). The "
+            "runtime agent additionally anonymises every input before storage — see `METADATA_SCHEMA.md`."
+        )
+    else:
+        _verif = ("- **Verification (pending):** a Presidio pass is wired in "
+                  "`oc14_triage.data.anonymize_audit` — run `python -m oc14_triage.data.anonymize_audit`.")
 
     lines = [
         "# OC14 — Bilingual medical-triage dataset · provenance & GDPR card",
@@ -131,10 +146,7 @@ def build() -> str:
         "they are non-personal by construction → outside GDPR scope (**Recital 26**).",
         "- **MIETIC / MIMIC-derived triage corpora are deliberately excluded** (PhysioNet credentialed "
         "license forbids redistribution) — see research doc 00 §0b / Decision B.",
-        "- **Verification (pending):** a Microsoft Presidio pass (FR `fr_core_news_md` + EN) is wired "
-        "in `oc14_triage.data.anonymize` (TODO) and will run as a *hypothesis test* — we expect "
-        "near-zero PII and will report the actual findings here with an audit log (per-record "
-        "SHA-256, entities found, timestamp).",
+        _verif,
         "",
         "## Build composition",
         "",

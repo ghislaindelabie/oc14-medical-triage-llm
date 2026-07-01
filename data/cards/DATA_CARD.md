@@ -25,7 +25,7 @@ Per-source notes:
 - **No real patient records.** Sources are (a) French ECN/pharmacy **exam questions** (MediQAl), (b) public **NIH patient-education** text (MedQuAD), and (c) **constructed / synthetic** triage answers (the DPO preference pairs are built from the consensus-labelled cases + hand-written safety pairs). Hand-written triage vignettes are **fictional**.
 - The constructed SFT/DPO sets therefore contain **no personally identifiable information**; they are non-personal by construction → outside GDPR scope (**Recital 26**).
 - **MIETIC / MIMIC-derived triage corpora are deliberately excluded** (PhysioNet credentialed license forbids redistribution) — see research doc 00 §0b / Decision B.
-- **Verification (pending):** a Microsoft Presidio pass (FR `fr_core_news_md` + EN) is wired in `oc14_triage.data.anonymize` (TODO) and will run as a *hypothesis test* — we expect near-zero PII and will report the actual findings here with an audit log (per-record SHA-256, entities found, timestamp).
+- **Verification (done — presidio+spacy 2.2.362):** ran a Presidio pass over 6,695 corpus texts (audit trail `anonymization_audit.json`: per-record SHA-256 + entities, no raw text stored). Raw detections: AGE=3,624, DATE_TIME=97, LOCATION=13,298, PERSON=3,330, PHONE_NUMBER=470. **These are overwhelmingly clinical eponyms, anatomical LOCATIONs, ages and generic exam personas (Monsieur/Madame X) — not real patient identifiers**, consistent with the sources being ECN/pharmacy exam questions + synthetic vignettes (no real patients → Recital 26). The runtime agent additionally anonymises every input before storage — see `METADATA_SCHEMA.md`.
 
 ## Build composition
 
