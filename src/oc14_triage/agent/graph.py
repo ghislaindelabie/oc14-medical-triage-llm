@@ -17,12 +17,14 @@ from datetime import UTC, datetime
 from langgraph.graph import END, START, StateGraph
 
 from ..anonymization import anonymize, sha256_text
+from ..config import URGENCY_LEVELS
 from .backend import parse_triage, triage_once
 from .questionnaire import detect_red_flags
 from .sih import to_fhir
 from .state import TriageCase
 
 MAX = "urgence maximale"
+_DEFAULT_URGENCY = "urgence modérée"
 _MODEL_VERSION = os.environ.get("OC14_MODEL_VERSION", "sft-pre-v9-stub")
 
 
@@ -59,10 +61,17 @@ def _triage(state: TriageCase) -> dict:
 def _explication(state: TriageCase) -> dict:
     p = parse_triage(state.get("model_output", ""))
     urgency = p["urgency"]
+    justification = p["justification"]
     # Safety override (the one conditional): a detected red-flag can only be >= maximale.
     if state.get("red_flags") and urgency != MAX:
         urgency = MAX
-    return {"urgency": urgency, "justification": p["justification"],
+    # Fallback: unparseable model output leaves urgency=None (or off-scale) — default to a
+    # safe modérée rather than let a None crash the FHIR coding downstream, and note it.
+    if urgency not in URGENCY_LEVELS:
+        urgency = _DEFAULT_URGENCY
+        note = "réponse du modèle non structurée — niveau par défaut appliqué (urgence modérée)."
+        justification = f"{justification} {note}".strip() if justification else note
+    return {"urgency": urgency, "justification": justification,
             "recommendation": p["recommendation"], "disclaimer_present": p["disclaimer_present"]}
 
 
@@ -113,6 +122,7 @@ def build_graph(store=None):
 def process_case(raw_text: str, *, session_id: str, lang: str = "fr", store=None,
                  answers: dict | None = None) -> dict:
     """Run one assembled case through the chain; returns the final state."""
+    lang = lang if lang in ("fr", "en") else "fr"  # coerce unsupported langs (else Presidio 500s)
     app = build_graph(store)
     return app.invoke({"session_id": session_id, "lang": lang, "raw_text": raw_text,
                        "answers": answers or {}, "trace": []})

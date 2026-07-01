@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import re
 
+import openai
 from openai import OpenAI
 
 from ..config import SYSTEM_PROMPT
@@ -23,10 +24,21 @@ from ..eval.metrics import extract_urgency
 VLLM_BASE_URL = os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1")
 MODEL_ID = os.environ.get("OC14_MODEL_ID", "oc14-triage")
 
-_client = OpenAI(base_url=VLLM_BASE_URL, api_key=os.environ.get("VLLM_API_KEY", "EMPTY"))
+# timeout: never hang the request thread on an unresponsive vLLM endpoint.
+_client = OpenAI(base_url=VLLM_BASE_URL, api_key=os.environ.get("VLLM_API_KEY", "EMPTY"),
+                 timeout=30)
 
 _DISCLAIMER = ("ne remplace pas", "does not replace")
 _DISCLAIMER_FR = "Cet avis ne remplace pas une consultation médicale."
+
+# Safe, structured triage returned when the backend is unreachable/errors — degrades to a
+# moderate level with a clear "service unavailable" justification rather than raising.
+_SAFE_FALLBACK = (
+    "1. Niveau d'urgence : urgence modérée.\n"
+    "2. Justification : service de triage momentanément indisponible.\n"
+    "3. Recommandation : orienter vers une évaluation médicale.\n"
+    f"{_DISCLAIMER_FR}"
+)
 
 # Benign-side keyword cues → downgrade below the default modérée to différée.
 _DEFERRED_CUES = ("rhume", "petit", "léger", "bénin", "depuis longtemps", "chronique stable")
@@ -67,13 +79,17 @@ def triage_once(anon_text: str, lang: str = "fr", *, red_flags: list | None = No
         return _stub_answer(anon_text, red_flags)
 
     lang = lang if lang in SYSTEM_PROMPT else "fr"
-    r = _client.chat.completions.create(
-        model=MODEL_ID, temperature=0, max_tokens=160,
-        messages=[{"role": "system", "content": SYSTEM_PROMPT[lang]},
-                  {"role": "user", "content": anon_text}],
-        stop=["<|im_end|>"],
-        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
-    )
+    try:
+        r = _client.chat.completions.create(
+            model=MODEL_ID, temperature=0, max_tokens=160,
+            messages=[{"role": "system", "content": SYSTEM_PROMPT[lang]},
+                      {"role": "user", "content": anon_text}],
+            stop=["<|im_end|>"],
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        )
+    except openai.OpenAIError:
+        # Any backend/network/timeout failure → safe structured fallback, never propagate.
+        return _SAFE_FALLBACK
     return (r.choices[0].message.content or "").strip()
 
 

@@ -47,6 +47,23 @@ def test_safety_override_escalates_undertriaged_redflag(tmp_path, monkeypatch):
     assert final["urgency"] == "urgence maximale"
 
 
+def test_unstructured_model_output_defaults_to_moderee(tmp_path, monkeypatch):
+    # Model returns garbage with no parseable urgency and no red-flag input →
+    # the chain must NOT crash and must default the urgency to modérée.
+    monkeypatch.setattr(gmod, "triage_once", lambda *a, **k: "garbage no structure")
+    final = gmod.process_case("mal de dos depuis une semaine", lang="fr",
+                              session_id="s5", store=Store(tmp_path / "d.db"))
+    assert final["urgency"] == "urgence modérée"
+    assert final["sih_record"]["resourceType"] == "Bundle"  # no KeyError(None) crash
+
+
+def test_unsupported_lang_is_coerced_and_triages(tmp_path):
+    # An unsupported lang (e.g. "es") must be coerced to "fr" rather than 500 / KeyError.
+    final = gmod.process_case("dolor de cabeza leve", lang="es", session_id="s6",
+                              store=Store(tmp_path / "d.db"))
+    assert final["urgency"] in ("urgence maximale", "urgence modérée", "urgence différée")
+
+
 def test_trace_records_node_timing(tmp_path):
     final = gmod.process_case("angine légère depuis 2 jours", lang="fr",
                               session_id="s4", store=Store(tmp_path / "d.db"))

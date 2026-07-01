@@ -79,3 +79,22 @@ def test_real_path_passes_temperature_stop_and_system_prompt(monkeypatch):
     assert captured["stop"] == ["<|im_end|>"]
     system_msg = next(m for m in captured["messages"] if m["role"] == "system")
     assert system_msg["content"] == SYSTEM_PROMPT["fr"]
+
+
+def test_real_path_backend_error_returns_safe_fallback(monkeypatch):
+    """A backend/network failure must degrade to a SAFE structured triage, never raise."""
+    import openai
+
+    def _boom(**kwargs):
+        raise openai.APIConnectionError(request=None)
+
+    monkeypatch.setattr(bk._client.chat.completions, "create", _boom)
+
+    out = bk.triage_once("douleur au genou depuis une semaine", lang="fr", stub=False)
+    low = out.lower()
+    assert "urgence modérée" in low            # safe default level
+    assert "ne remplace pas" in low            # FR disclaimer preserved
+    # and it is still parseable into the three-part structure
+    parsed = bk.parse_triage(out)
+    assert parsed["urgency"] == "urgence modérée"
+    assert parsed["recommendation"].strip()

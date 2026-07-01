@@ -105,3 +105,16 @@ def test_french_nir_masked() -> None:
     res = anonymize("NIR 1 85 07 75 108 071 42, douleur abdominale", mode="runtime", lang="fr")
     assert "1 85 07 75 108 071 42" not in res.text
     assert "douleur abdominale" in res.text
+
+
+@pytest.mark.skipif(not _HAS_NER, reason=_NER_REASON)
+def test_questionnaire_labels_not_masked_as_person_or_location_fr() -> None:
+    """The questionnaire's own French labels must NOT be masked as [NOM]/[LIEU] — masking them
+    corrupts the model input and discredits the RGPD demo (allowlist + higher NER threshold)."""
+    text = "Motif : Intensité (1-10) : 5. Début : ce matin."
+    res = anonymize(text, mode="runtime", lang="fr")
+    assert "Intensité" in res.text
+    assert "Motif" in res.text
+    assert "Début" in res.text
+    assert "[LIEU]" not in res.text
+    assert "[NOM]" not in res.text

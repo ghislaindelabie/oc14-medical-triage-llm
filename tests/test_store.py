@@ -96,3 +96,28 @@ def test_all_sessions_returns_distinct_session_ids(store):
     store.record({"interaction_id": "2", "session_id": "s1"})
     store.record({"interaction_id": "3", "session_id": "s2"})
     assert set(store.all_sessions()) == {"s1", "s2"}
+
+
+def test_record_is_thread_safe(store):
+    """Concurrent record() from many threads must land every row and never raise."""
+    import threading
+
+    n_threads, per_thread = 8, 20
+    errors: list[Exception] = []
+
+    def worker(tid: int) -> None:
+        try:
+            for i in range(per_thread):
+                store.record({"interaction_id": f"t{tid}-{i}", "session_id": "concurrent",
+                              "symptoms_anon": "x"})
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(t,)) for t in range(n_threads)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+
+    assert errors == []
+    assert len(store.history("concurrent")) == n_threads * per_thread

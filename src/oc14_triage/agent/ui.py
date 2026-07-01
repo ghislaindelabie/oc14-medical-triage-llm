@@ -15,6 +15,8 @@ SERVICE_URL = os.environ.get("AGENT_SERVICE_URL", "http://localhost:8080")
 
 _ICON = {"urgence maximale": "🔴", "urgence modérée": "🟠", "urgence différée": "🟢"}
 
+_SERVICE_DOWN_MSG = "⚠️ Le service de triage est momentanément indisponible, réessayez."
+
 
 def render_result(result: dict, lang: str = "fr") -> str:
     """Format a completed triage result as markdown (verdict, justification, reco, req-id)."""
@@ -35,15 +37,29 @@ def render_result(result: dict, lang: str = "fr") -> str:
 
 
 def _post(path: str, payload: dict) -> dict:
-    return httpx.post(f"{SERVICE_URL}{path}", json=payload, timeout=120).json()
+    """POST to the API; on any HTTP/transport error return a sentinel {"detail": ...} dict so
+    callers can render a friendly message instead of raising into the Gradio event loop."""
+    try:
+        r = httpx.post(f"{SERVICE_URL}{path}", json=payload, timeout=120)
+        r.raise_for_status()
+        return r.json()
+    except httpx.HTTPError as exc:
+        return {"detail": f"service error: {exc}"}
 
 
 def _get(path: str) -> dict:
-    return httpx.get(f"{SERVICE_URL}{path}", timeout=30).json()
+    try:
+        r = httpx.get(f"{SERVICE_URL}{path}", timeout=30)
+        r.raise_for_status()
+        return r.json()
+    except httpx.HTTPError as exc:
+        return {"detail": f"service error: {exc}"}
 
 
 def _start(lang: str):
     r = _post("/session/start", {"lang": lang})
+    if r.get("detail") or "question" not in r:
+        return "", [(None, _SERVICE_DOWN_MSG)]
     return r["session_id"], [(None, r["question"])]
 
 
@@ -51,6 +67,9 @@ def _answer(message: str, history: list, session_id: str, lang: str):
     if not session_id:
         session_id, history = _start(lang)
     r = _post("/session/answer", {"session_id": session_id, "answer": message})
+    if r.get("detail") or not (r.get("done") or r.get("question")):
+        # Service error or malformed payload → friendly message, never a blank verdict card.
+        return history + [(message, _SERVICE_DOWN_MSG)], "", session_id
     bot = render_result(r, lang) if r.get("done") else r.get("question", "…")
     return history + [(message, bot)], "", session_id
 
@@ -66,6 +85,9 @@ def build_ui():
                     "est tracée par un identifiant de dossier._")
         lang = gr.Radio(["fr", "en"], value="fr", label="Langue")
         session = gr.State("")
+        # Static greeting; the session is bootstrapped lazily on the first answer (no API call
+        # on page load, so a page refresh never fails if the backend is still warming up).
+        gr.Markdown("👋 _Décrivez le **motif de consultation** pour démarrer le triage._")
         chatbot = gr.Chatbot(label="Questionnaire de triage", height=380)
         msg = gr.Textbox(label="Votre réponse", placeholder="Décrivez les symptômes…")
         with gr.Row():
@@ -75,7 +97,6 @@ def build_ui():
             trace_out = gr.JSON(label="Dossier SIH / historique")
             refresh = gr.Button("Rafraîchir le dossier")
 
-        demo.load(_start, inputs=lang, outputs=[session, chatbot])
         send.click(_answer, [msg, chatbot, session, lang], [chatbot, msg, session])
         msg.submit(_answer, [msg, chatbot, session, lang], [chatbot, msg, session])
         restart.click(_start, inputs=lang, outputs=[session, chatbot])

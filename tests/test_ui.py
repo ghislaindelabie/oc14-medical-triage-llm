@@ -4,6 +4,7 @@ import pytest
 
 pytest.importorskip("gradio")
 
+from oc14_triage.agent import ui as ui_mod  # noqa: E402
 from oc14_triage.agent.ui import build_ui, render_result  # noqa: E402
 
 _DONE = {
@@ -31,6 +32,16 @@ def test_render_result_marks_the_three_levels_distinctly():
 def test_render_result_notes_missing_disclaimer():
     md = render_result({**_DONE, "disclaimer_present": False}, "fr")
     assert "urgence maximale" in md.lower()       # still renders the verdict
+
+
+def test_answer_renders_friendly_message_on_service_error(monkeypatch):
+    # When the API returns an error payload (no done/question), the UI must show a friendly
+    # FR "service unavailable" message, NOT a blank verdict card.
+    monkeypatch.setattr(ui_mod, "_post", lambda path, payload: {"detail": "boom"})
+    history, cleared, sid = ui_mod._answer("douleur", [], "sess-1", "fr")
+    _, bot = history[-1]
+    assert "momentanément indisponible" in bot.lower()
+    assert "urgence maximale" not in bot.lower()  # no confident verdict rendered
 
 
 def test_build_ui_returns_blocks():

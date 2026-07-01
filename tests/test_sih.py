@@ -53,6 +53,21 @@ def test_subject_is_pseudonymous_and_bundle_has_no_pii_name_key():
     assert "dupont" not in raw
 
 
+def test_unknown_urgency_does_not_crash_and_omits_coding():
+    # urgency=None (unparseable model output) must not raise KeyError(None) — the bundle
+    # still builds, just without a valueCodeableConcept coding.
+    case = {
+        "interaction_id": "int-none",
+        "session_id": "sess-none",
+        "urgency": None,
+        "timestamp_utc": "2026-07-01T14:00:00Z",
+    }
+    bundle = to_fhir(case)
+    assert bundle["resourceType"] == "Bundle"
+    obs = _entries_of_type(bundle, "Observation")[0]
+    assert "coding" not in obs.get("valueCodeableConcept", {})
+
+
 def test_encounter_id_is_interaction_id():
     case = {
         "interaction_id": "int-xyz-42",

@@ -58,3 +58,17 @@ def test_history_endpoint_has_no_pii():
 def test_answer_unknown_session_is_404():
     assert client.post("/session/answer",
                        json={"session_id": "nope", "answer": "x"}).status_code == 404
+
+
+def test_blank_answer_reasks_same_field_and_does_not_complete():
+    """A blank answer must re-ask the SAME field, never advance / complete the collecte."""
+    start = client.post("/session/start", json={"lang": "fr"}).json()
+    sid = start["session_id"]
+    first_field = start["field"]  # "motif"
+    r = client.post("/session/answer", json={"session_id": sid, "answer": "   "}).json()
+    assert r["done"] is False
+    assert r["field"] == first_field   # still on motif, not advanced
+    # a real answer then advances past motif
+    r2 = client.post("/session/answer",
+                     json={"session_id": sid, "answer": "mal de tête"}).json()
+    assert r2["field"] != first_field

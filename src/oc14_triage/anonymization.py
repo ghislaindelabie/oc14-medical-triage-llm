@@ -78,6 +78,19 @@ _REGEX_LAYER = (
 # Entity types Presidio should surface; NER contributes PERSON/LOCATION/DATE_TIME.
 _NER_ENTITIES = ("PERSON", "LOCATION", "DATE_TIME", "IBAN_CODE")
 
+# Common French nouns the runtime NER wrongly tags as PERSON/LOCATION — many are the
+# questionnaire's own field labels. Masking them corrupts the model input and discredits the
+# RGPD demo, so any PERSON/LOCATION span whose surface text (stripped, lowercased) is in this
+# allowlist is dropped. This ONLY relaxes the NER (names/places) layer; the regex safety net
+# (phone/email/NIR/id) stays unconditional.
+_NER_ALLOWLIST = frozenset({
+    "intensité", "sévérité", "gravité", "motif", "début", "recommandation", "urgence",
+    "patient", "patiente", "douleur", "niveau", "justification", "précision",
+})
+# Minimum NER confidence for PERSON/LOCATION at runtime — raised from 0.4 to cut the common
+# false positives on ordinary French nouns while keeping real names/places.
+_NER_SCORE_THRESHOLD = 0.6
+
 
 @dataclass
 class AnonResult:
@@ -147,13 +160,20 @@ def _get_analyzer():
 def _ner_spans(text: str, lang: str) -> list[tuple[int, int, str]]:
     """(start, end, entity_type) from Presidio for the NER-only entity types. Phones/emails/NIR
     are handled by the regex layer, so we ignore Presidio's (often low-confidence) versions of
-    those to avoid double-masking and fragment artefacts."""
+    those to avoid double-masking and fragment artefacts. PERSON/LOCATION spans whose surface
+    text is an allowlisted common French noun are dropped (see _NER_ALLOWLIST)."""
     analyzer = _get_analyzer()
     if analyzer is None:
         return []
     results = analyzer.analyze(text=text, language=lang, entities=list(_NER_ENTITIES),
-                               score_threshold=0.4)
-    return [(r.start, r.end, r.entity_type) for r in results]
+                               score_threshold=_NER_SCORE_THRESHOLD)
+    spans: list[tuple[int, int, str]] = []
+    for r in results:
+        if r.entity_type in ("PERSON", "LOCATION") \
+                and text[r.start:r.end].strip().lower() in _NER_ALLOWLIST:
+            continue
+        spans.append((r.start, r.end, r.entity_type))
+    return spans
 
 
 def _regex_spans(text: str) -> list[tuple[int, int, str]]:
