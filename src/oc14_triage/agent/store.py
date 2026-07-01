@@ -15,6 +15,10 @@ from pathlib import Path
 
 from .state import DOSSIER_FIELDS
 
+_COLS = ", ".join(DOSSIER_FIELDS)
+_PLACEHOLDERS = ", ".join("?" for _ in DOSSIER_FIELDS)
+_INSERT_SQL = f"INSERT INTO dossier ({_COLS}) VALUES ({_PLACEHOLDERS})"
+
 
 class Store:
     def __init__(self, db_path: str | Path) -> None:
@@ -44,13 +48,8 @@ class Store:
         if row.get("deleted") is None:
             row["deleted"] = 0
 
-        placeholders = ", ".join("?" for _ in DOSSIER_FIELDS)
-        cols = ", ".join(DOSSIER_FIELDS)
         with self._lock:
-            self._conn.execute(
-                f"INSERT INTO dossier ({cols}) VALUES ({placeholders})",
-                [row[c] for c in DOSSIER_FIELDS],
-            )
+            self._conn.execute(_INSERT_SQL, [row[c] for c in DOSSIER_FIELDS])
             self._conn.commit()
         return interaction_id
 

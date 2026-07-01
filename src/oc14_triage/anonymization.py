@@ -231,7 +231,7 @@ def anonymize(text: str, *, mode: str = "runtime", lang: str = "fr") -> AnonResu
         counts[etype] += 1
 
     entities = [{"type": t, "count": c} for t, c in sorted(counts.items())]
-    _get_analyzer()  # ensure engine metadata is populated
+    # Engine metadata is already populated: _ner_spans() above always calls _get_analyzer().
     return AnonResult(text=out, entities=entities, engine=_ENGINE_NAME, engine_version=_ENGINE_VER)
 
 

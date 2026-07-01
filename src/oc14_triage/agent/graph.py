@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from langgraph.graph import END, START, StateGraph
@@ -28,7 +29,7 @@ _DEFAULT_URGENCY = "urgence modérée"
 _MODEL_VERSION = os.environ.get("OC14_MODEL_VERSION", "sft-pre-v9-stub")
 
 
-def _timed(name, fn):
+def _timed(name: str, fn: Callable[[TriageCase], dict]) -> Callable[[TriageCase], dict]:
     """Wrap a node so each transition appends its wall-clock ms to the trace."""
     def wrapped(state: TriageCase) -> dict:
         t0 = time.perf_counter()

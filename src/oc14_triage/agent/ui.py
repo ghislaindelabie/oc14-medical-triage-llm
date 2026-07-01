@@ -36,24 +36,23 @@ def render_result(result: dict, lang: str = "fr") -> str:
     return "\n\n".join(lines)
 
 
-def _post(path: str, payload: dict) -> dict:
-    """POST to the API; on any HTTP/transport error return a sentinel {"detail": ...} dict so
+def _request(method: str, path: str, *, json: dict | None = None, timeout: float) -> dict:
+    """Call the API; on any HTTP/transport error return a sentinel {"detail": ...} dict so
     callers can render a friendly message instead of raising into the Gradio event loop."""
     try:
-        r = httpx.post(f"{SERVICE_URL}{path}", json=payload, timeout=120)
+        r = httpx.request(method, f"{SERVICE_URL}{path}", json=json, timeout=timeout)
         r.raise_for_status()
         return r.json()
     except httpx.HTTPError as exc:
         return {"detail": f"service error: {exc}"}
+
+
+def _post(path: str, payload: dict) -> dict:
+    return _request("POST", path, json=payload, timeout=120)
 
 
 def _get(path: str) -> dict:
-    try:
-        r = httpx.get(f"{SERVICE_URL}{path}", timeout=30)
-        r.raise_for_status()
-        return r.json()
-    except httpx.HTTPError as exc:
-        return {"detail": f"service error: {exc}"}
+    return _request("GET", path, timeout=30)
 
 
 def _start(lang: str):

@@ -40,6 +40,10 @@ def _urgency_of(row: dict) -> str:
     return "(unparsed)"
 
 
+def _counts(rows: list[dict], key: str) -> dict:
+    return dict(collections.Counter(r.get(key) for r in rows))
+
+
 def _sft_stats() -> dict:
     out: dict = {}
     for split, fname in (("train", "sft_train.jsonl"), ("val", "sft_val.jsonl")):
@@ -49,9 +53,9 @@ def _sft_stats() -> dict:
         tri = [r for r in rows if r.get("kind") == "triage"]
         out[split] = {
             "n": len(rows),
-            "lang": dict(collections.Counter(r.get("lang") for r in rows)),
-            "kind": dict(collections.Counter(r.get("kind") for r in rows)),
-            "source": dict(collections.Counter(r.get("source") for r in rows)),
+            "lang": _counts(rows, "lang"),
+            "kind": _counts(rows, "kind"),
+            "source": _counts(rows, "source"),
             "urgency_in_triage": dict(collections.Counter(_urgency_of(r) for r in tri)),
         }
     return out
@@ -65,8 +69,8 @@ def _dpo_stats() -> dict:
             continue
         out[split] = {
             "n": len(rows),
-            "lang": dict(collections.Counter(r.get("lang") for r in rows)),
-            "source": dict(collections.Counter(r.get("source") for r in rows)),
+            "lang": _counts(rows, "lang"),
+            "source": _counts(rows, "source"),
         }
     return out
 
@@ -75,15 +79,15 @@ def _eval_stats() -> dict | None:
     rows = _read_jsonl(KAGGLE_UPLOAD / "triage_eval_gold.jsonl")
     if not rows:
         return None
-    return {"n": len(rows), "by_level": dict(collections.Counter(r.get("gold_urgency") for r in rows))}
+    return {"n": len(rows), "by_level": _counts(rows, "gold_urgency")}
 
 
 def build() -> str:
     inv = _load(RAW / "_inventory.json") or []
-    rows_by_source: dict[str, int] = {}
+    rows_by_source: collections.Counter[str] = collections.Counter()
     for r in inv:
         if "error" not in r:
-            rows_by_source[r["source"]] = rows_by_source.get(r["source"], 0) + r["num_rows"]
+            rows_by_source[r["source"]] += r["num_rows"]
     sft = _sft_stats()
     dpo = _dpo_stats()
     gold = _eval_stats()

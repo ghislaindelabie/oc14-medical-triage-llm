@@ -85,8 +85,9 @@ def answer(req: AnswerReq) -> dict:
     if field is not None:
         answers[field] = req.answer
 
-    if next_field(answers, lang) is not None:
-        return {"done": False, "field": next_field(answers, lang),
+    remaining = next_field(answers, lang)
+    if remaining is not None:
+        return {"done": False, "field": remaining,
                 "question": next_question(answers, lang)}
 
     # collecte complete → run the chain (assembled text is anonymised inside the graph)

@@ -49,6 +49,12 @@ def detect_red_flags(text: str, lang: str = "fr") -> list[str]:
     return [cue for cue in RED_FLAGS[lang] if cue in low]
 
 
+def _followup_cue(motif: str, lang: str) -> str | None:
+    """First detected red-flag cue that has a targeted follow-up question, or None."""
+    followups = _FOLLOWUP[lang]
+    return next((cue for cue in detect_red_flags(motif, lang) if cue in followups), None)
+
+
 _TEMPLATE = {
     "fr": {
         "motif": "Motif : {}.",
@@ -92,10 +98,8 @@ def next_field(answers: dict, lang: str = "fr") -> str | None:
     text."""
     if "motif" not in answers:
         return "motif"
-    if "followup" not in answers:
-        for cue in detect_red_flags(answers["motif"], lang):
-            if cue in _FOLLOWUP[lang]:
-                return "followup"
+    if "followup" not in answers and _followup_cue(answers["motif"], lang) is not None:
+        return "followup"
     for field in CORE_FIELDS:
         if field not in answers:
             return field
@@ -104,9 +108,9 @@ def next_field(answers: dict, lang: str = "fr") -> str | None:
 
 def _question_for(field: str, answers: dict, lang: str) -> str:
     if field == "followup":
-        for cue in detect_red_flags(answers.get("motif", ""), lang):
-            if cue in _FOLLOWUP[lang]:
-                return _FOLLOWUP[lang][cue]
+        cue = _followup_cue(answers.get("motif", ""), lang)
+        if cue is not None:
+            return _FOLLOWUP[lang][cue]
     return _QUESTIONS[lang][field]
 
 

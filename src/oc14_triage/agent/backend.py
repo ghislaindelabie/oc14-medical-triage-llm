@@ -97,9 +97,9 @@ _JUSTIF_RE = re.compile(r"(?:justification[^:]*|clinical justification)\s*:?\s*(
 _RECO_RE = re.compile(r"(?:recommandation|recommendation)\s*:?\s*(.+)", re.IGNORECASE)
 
 
-def _section(pattern: re.Pattern, text: str) -> str:
+def _section(pattern: re.Pattern, lines: list[str]) -> str:
     """First line matching `pattern`, returning its captured group stripped of trailing markers."""
-    for line in (text or "").splitlines():
+    for line in lines:
         m = pattern.search(line)
         if m:
             return m.group(1).strip()
@@ -109,10 +109,12 @@ def _section(pattern: re.Pattern, text: str) -> str:
 def parse_triage(text: str) -> dict:
     """Split a structured triage answer into {urgency, justification, recommendation,
     disclaimer_present}. Reuses the canonical `extract_urgency` for the level."""
-    low = (text or "").lower()
+    text = text or ""
+    lines = text.splitlines()
+    low = text.lower()
     return {
         "urgency": extract_urgency(text),
-        "justification": _section(_JUSTIF_RE, text),
-        "recommendation": _section(_RECO_RE, text),
+        "justification": _section(_JUSTIF_RE, lines),
+        "recommendation": _section(_RECO_RE, lines),
         "disclaimer_present": any(m in low for m in _DISCLAIMER),
     }

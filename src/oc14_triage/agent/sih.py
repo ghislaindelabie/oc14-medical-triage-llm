@@ -34,7 +34,7 @@ def to_fhir(case: dict) -> dict:
     # An unparseable model output can leave urgency=None; don't index URGENCY_CODING with it
     # (KeyError). Encode the coding only when known, else fall back to a plain "indéterminé".
     coding = URGENCY_CODING.get(case.get("urgency"))
-    value = ({"coding": [coding]} if coding else {"text": "indéterminé"})
+    value = {"coding": [coding]} if coding else {"text": "indéterminé"}
     observation = {
         "resourceType": "Observation",
         "status": "final",
