@@ -64,6 +64,7 @@ class TriageCase(TypedDict, total=False):
     disclaimer_present: bool
 
     # persistance / SIH
+    timestamp_utc: str
     latency_ms: float
     trace: list  # [{"node": str, "ms": float}, ...] — per-node timing
     sih_record: dict  # FHIR-shaped Encounter+Observation
