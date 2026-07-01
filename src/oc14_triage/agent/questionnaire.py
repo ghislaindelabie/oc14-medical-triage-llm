@@ -82,22 +82,35 @@ def assemble_case_text(answers: dict, lang: str = "fr") -> str:
     return " ".join(parts)
 
 
-def next_question(answers: dict, lang: str = "fr") -> str | None:
-    """Return the next question to ask, or None when the core fields are gathered.
+def next_field(answers: dict, lang: str = "fr") -> str | None:
+    """Return the KEY of the next field to fill (or None when complete).
 
     Order: motif first; then — if the chief complaint carries a red-flag cue with a known
-    follow-up and it hasn't been asked yet (tracked via the "followup" key) — ONE targeted
-    follow-up; then the remaining core fields (debut, intensite) in order."""
+    follow-up not yet asked (tracked via the "followup" key) — the "followup" field; then
+    the remaining core fields (debut, intensite). The service stores each answer under this
+    key, so it stays the single source of truth for both the key and (via next_question) the
+    text."""
     if "motif" not in answers:
-        return _QUESTIONS[lang]["motif"]
-
+        return "motif"
     if "followup" not in answers:
         for cue in detect_red_flags(answers["motif"], lang):
             if cue in _FOLLOWUP[lang]:
-                return _FOLLOWUP[lang][cue]
-
+                return "followup"
     for field in CORE_FIELDS:
         if field not in answers:
-            return _QUESTIONS[lang][field]
-
+            return field
     return None
+
+
+def _question_for(field: str, answers: dict, lang: str) -> str:
+    if field == "followup":
+        for cue in detect_red_flags(answers.get("motif", ""), lang):
+            if cue in _FOLLOWUP[lang]:
+                return _FOLLOWUP[lang][cue]
+    return _QUESTIONS[lang][field]
+
+
+def next_question(answers: dict, lang: str = "fr") -> str | None:
+    """Return the text of the next question, or None when the core fields are gathered."""
+    field = next_field(answers, lang)
+    return _question_for(field, answers, lang) if field else None
