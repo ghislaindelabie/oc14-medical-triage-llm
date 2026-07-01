@@ -269,3 +269,11 @@ if __name__ == "__main__":
     le code. Tout est privé/tailnet → partage d'écran. Garde cette page (ou la Note de synthèse) ouverte.</p>"""
     build_report([(DOCS / "MENTOR_SHOWCASE.md", "", "")], VAULT / "OC14-mentor-showcase.html",
                  "OC14 · Manuel de présentation au mentor", "OC14 · Démo mentor", show_intro)
+
+    rapport_intro = """<h1>OC14 — Rapport technique (livrable 5)</h1>
+    <p class="note">Rapport ≤20 pages : POC d'<strong>agent</strong> de triage médical CHSA — données/RGPD,
+    entraînement (SFT+LoRA → DPO), l'agent (chaîne LangGraph), évaluation, serving/CI, limites, roadmap.
+    Décision-driven. Le <strong>runbook de démo</strong> (lancement, cas, go/no-go) suit le rapport.</p>"""
+    build_report([(DOCS / "RAPPORT_FR.md", "", ""), (DOCS / "DEMO_RUNBOOK.md", "", "")],
+                 VAULT / "OC14-rapport.html", "OC14 · Rapport technique + runbook de démo",
+                 "OC14 · Rapport — agent de triage", rapport_intro)
