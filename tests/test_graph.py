@@ -112,6 +112,28 @@ def test_confidence_medium_on_clean_case_without_redflag(tmp_path):
     assert final["needs_review"] is False
 
 
+def test_model_unavailable_no_redflag_defers_to_clinician(tmp_path, monkeypatch):
+    # Model down / cold-starting + no red-flag → NO fabricated verdict: defer to a clinician + retry.
+    monkeypatch.setattr(gmod, "triage_once", lambda *a, **k: gmod._UNAVAILABLE)
+    final = gmod.process_case("mal de dos depuis une semaine", lang="fr",
+                              session_id="u1", store=Store(tmp_path / "d.db"))
+    assert final["urgency"] is None                       # no fabricated urgency level
+    assert final["needs_review"] is True
+    assert "clinicien" in (final["recommendation"] or "").lower()
+    j = (final["justification"] or "").lower()
+    assert "indispon" in j or "démarre" in j
+    assert final["sih_record"]["resourceType"] == "Bundle"  # None urgency must not crash FHIR
+
+
+def test_model_unavailable_with_redflag_still_escalates(tmp_path, monkeypatch):
+    # Safety override wins even during an outage: a detected red-flag still escalates to maximale.
+    monkeypatch.setattr(gmod, "triage_once", lambda *a, **k: gmod._UNAVAILABLE)
+    final = gmod.process_case("douleur thoracique aiguë et sueurs", lang="fr",
+                              session_id="u2", store=Store(tmp_path / "d.db"))
+    assert final["urgency"] == "urgence maximale"
+    assert final["needs_review"] is True
+
+
 def test_dossier_records_confidence_and_anonymised_vitals(tmp_path):
     store = Store(tmp_path / "d.db")
     gmod.process_case("mal de tête modéré", lang="fr", session_id="c5", store=store,
