@@ -4,8 +4,8 @@ https://huggingface.co/Qwen/Qwen3-1.7B-Base
 
 # Data
 https://huggingface.co/datasets/ANR-MALADES/MediQAl
-http://nthngdy/frenchmedmcqa
-http://keivalya/MedQuad-MedicalQnADataset
+https://huggingface.co/datasets/qanastek/FrenchMedMCQA  (disabled)
+https://huggingface.co/datasets/keivalya/MedQuad-MedicalQnADataset
 https://huggingface.co/datasets/TsinghuaC3I/UltraMedical-Preference
 
 # Tools to consider
@@ -14,5 +14,12 @@ https://github.com/microsoft/presidio
 
 # Documentation
 https://docs.unsloth.ai/get-started/unsloth-notebooks
-https://docs.unsloth.ai/get-started/unsloth-notebooks
 https://docs.vllm.ai/en/latest/
+
+# Project artifacts
+https://github.com/ghislaindelabie/oc14-medical-triage-llm
+https://wandb.ai/ghislaindelabie/oc14-triage-eval
+https://www.kaggle.com/code/ghislaindelabie/oc14-sft-lora-qwen3-1-7b
+https://www.kaggle.com/code/ghislaindelabie/oc14-sft-eval
+https://www.kaggle.com/datasets/ghislaindelabie/oc14-triage-data
+https://huggingface.co/datasets/syntech-ai/medical-triage-500

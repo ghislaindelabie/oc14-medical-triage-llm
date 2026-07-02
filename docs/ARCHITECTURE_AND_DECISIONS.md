@@ -1,6 +1,6 @@
 # OC14 — Architecture & decisions (mentor-facing)
 
-> **Status:** intermediary, as of **2026-06-19**. May be updated as work continues.
+> **Status:** intermediary, as of **2026-06-29**. May be updated as work continues.
 > **Purpose:** explain *what* was built and *why*, with the criterion behind each choice, so each
 > step can be defended to the mentor. Terms are defined on first use. Numbers are the real,
 > measured ones (sources in `DEVELOPMENT_JOURNAL.md`); deeper detail lives in `docs/research/00`–`09`.
@@ -38,28 +38,27 @@ serving need a GPU.
   a clinical-safety POC that head-start matters. So we fine-tune **both** on the same data and compare;
   **Base is the primary** model we DPO, merge, serve and deploy, **Instruct is the comparison**.
 - **Criterion:** honour the brief while showing the Base-vs-Instruct safety trade-off the mentor/reviewers value.
-- **Empirical result (small eval, n=6):** **Base SFT 0.67 (2/2 emergencies) > Instruct SFT.** The template
-  confound was tested and **confirmed real**: Instruct on its **native** template recovered from 0.33→**0.50**
-  (format 0.67→0.83, emergencies 0→1/2) — so ~half the original gap was our forced ChatML. **But Base still
-  leads even with the confound controlled** (0.67 vs 0.50, 2/2 vs 1/2). Net: the Base-over-Instruct claim is
-  **weakly supported, not proven** (margin small, n=6) — the **n=500 `medical-triage-500` eval** is needed to
-  settle it. **Served deliverable = Base SFT** (best measured). Full analysis in `DEVELOPMENT_JOURNAL.md`.
+- **Empirical result (stratified n=300, greedy, leak-free):** Base (untrained) macro-F1 0.19 → SFT v9 0.82
+  (served). The earlier n=6 Base-vs-Instruct comparison + template-confound analysis are in
+  `DEVELOPMENT_JOURNAL.md` (now superseded as the headline).
 
 ## 4. Fine-tuning
 - **SFT (Supervised Fine-Tuning):** show the model good (instruction → response) examples so it learns
   our triage response format and persona. **LoRA (Low-Rank Adaptation)** trains a small add-on
   (~0.3% of weights) instead of all 1.7B — so it fits a free 16 GB T4. Config: **r=16, α=16**,
-  4-bit, 2 epochs. **Result (Base): train_loss 0.845**, ~79 min on a T4.
+  4-bit, 2 epochs. **Result (Base): train_loss ~0.869 on the LLM-labelled set** (the heuristic-labelled v1
+  was 0.845), ~79 min on a T4.
 - **DPO (Direct Preference Optimization):** show the model pairs of (better, worse) answers so it
   prefers the better one — a cheap alignment method with no separate reward model. We use it as
   **(a) a technique demonstration** and **(b) a safety lever** (escalate-vs-reassure pairs), not as a
-  clinical-quality claim. Mix: ~hand-written bilingual safety pairs + filtered UltraMedical.
+  clinical-quality claim.
 - **Ordering invariant:** DPO runs on the SFT model **with the LoRA adapter still attached**; the
   adapter is **merged into the base weights exactly once, after DPO**, never between the stages.
-- **Measured outcome (2026-06-19):** DPO **regressed** the model (urgency 0.33 vs SFT 0.67; **missed
-  both emergencies**; repetition/GPT-isms). Root cause: the built DPO set was ~99% UltraMedical (1,489
-  vs 11 safety pairs), so DPO optimised GPT-4 verbosity, not triage. **→ We ship the SFT model**; DPO is
-  reported as an honest negative result. Fix path: more hand-written safety pairs + a safety-weighted mix.
+- **Data + outcome:** Shipped DPO = **direction-balanced triage-preference pairs** (211 train / 24 val:
+  under 103 / mod 50 / over 48 / safety 10; UltraMedical removed). **Outcome (DPO #2):** macro-F1 0.80 vs
+  SFT v9 0.82 — sharpened extremes (différée recall 0.71→0.96) but collapsed *modérée* (0.85→0.55). Honest
+  negative; **SFT v9 shipped**. Mechanism: adjacent-level pairs make *modérée* the rejected level on both
+  sides. (DPO #1 on a ~99% UltraMedical set also regressed — see journal.)
 - **Tooling:** **Unsloth** (a training wrapper with custom GPU kernels — ~2× faster, less VRAM) on top
   of Hugging Face **TRL/PEFT**. Plain TRL+PEFT is the documented fallback.
 
@@ -74,14 +73,21 @@ serving need a GPU.
 | qanastek FrenchMedMCQA | FR | Apache-2.0 | **disabled** (loader-script incompatible) |
 | MIETIC / MIMIC triage | EN | PhysioNet credentialed | **excluded** (no-redistribution licence) |
 
-**Construction recipe (built, verifiable):** SFT = **5,000 train / 556 val**, ≈ **80% FR / 20% EN**,
-**28% triage** (1,418 rows). Triage rows = hand-written bilingual vignettes + MediQAl clinical-case
-rows reshaped into the urgency→justification→recommendation structure. The remaining QA rows give the
-model the medical knowledge it needs to justify a triage. DPO = **1,350 train / 150 val**.
+**Construction recipe (shipped, verifiable):** SFT = **5,598 train / 562 val** (fr 4,571 / en 1,027;
+triage 2,041 / qa 3,557; sources llm_triage 1,953 · mediqal_mcqu 2,166 · mediqal_oeq 396 · medquad 995 ·
+vignette 88). Triage rows = hand-written bilingual vignettes + MediQAl clinical-case rows reshaped into
+the urgency→justification→recommendation structure. The remaining QA rows give the model the medical
+knowledge it needs to justify a triage. DPO = **211 train / 24 val** direction-balanced
+triage-preference pairs.
 
-**Honest caveat (must state to mentor):** urgency labels on the QA-derived triage rows are a documented
-**heuristic** (red-flag keywords), not clinically validated. The **held-out eval vignettes are
-hand-labelled by a different process**, so the triage metric is not circular.
+**Triage labelling (core architectural change):** Triage labels = **3-LLM consensus** (GPT-5.4 +
+Mistral-Medium-3.5 + Sonnet-4.6, Fleiss κ≈0.67), replacing the v1 red-flag heuristic; eval-gold
+(n=300, stratified 100/100/100) is held-out consensus, disjoint from train — so the triage metric is
+not circular.
+
+**Honest caveat (must state to mentor):** the consensus is a **silver standard** (LLM-as-annotator),
+not clinical validation; source cases are real French *exam* vignettes (good provenance, exam-style).
+See `DEVELOPMENT_JOURNAL.md` for the full limitations discussion.
 
 **GDPR/RGPD:** sources are exam questions / public NIH text / synthetic data → **no personal data** →
 out of GDPR scope (Recital 26). The MIETIC exclusion is documented as a maturity point. A Microsoft
@@ -114,10 +120,11 @@ Presidio verification pass is wired as a *hypothesis test* (expect ~0 PII; repor
 - **Inference config that matters (learned the hard way):** the small model must **stop on `<|im_end|>`**
   (its `eos` is `<|endoftext|>`) and use the **full trained system prompt**, or it degenerates into
   repetition. This is also exactly how we'll serve it via vLLM.
-- **Quick SFT eval result (Base, 6 held-out vignettes, correct inference):** urgency accuracy **0.67
-  (4/6)**, format **0.83**, disclaimer **0.83**; **both safety-critical `urgence maximale` cases caught
-  (2/2)**; the 2 misses were low-urgency (over-cautious — safe direction); no degeneration. n=6 is a
-  sanity check, not statistically meaningful (details in `DEVELOPMENT_JOURNAL.md`).
+- **SFT v9 eval result (stratified n=300, greedy, leak-free):** **macro-F1 0.82**; per-class recall
+  *urgence maximale* **0.90** [CI 0.83, 0.95] · *modérée* 0.85 · *différée* 0.71; format/disclaimer
+  **1.00**. The naive **Base (no fine-tuning)** floor on the same gold/harness is **macro-F1 0.19** — so
+  fine-tuning bought 0.19 → 0.82 and taught the format + disclaimer from scratch. The earlier n=6 sanity
+  number (0.67) is superseded (details in `DEVELOPMENT_JOURNAL.md`).
 
 ## 9. Key decisions (the genuine forks)
 | Decision | Choice | Why |
@@ -126,7 +133,7 @@ Presidio verification pass is wired as a *hypothesis test* (expect ~0 PII; repor
 | Urgency scale | 3-level FR | Brief wording; simplest to label/eval |
 | Training framework | Unsloth (+TRL fallback) | Speed/VRAM on a free T4 |
 | Bridge QA→triage | Reframe + reshape clinical cases + vignettes | No triage-labelled open data; keep it honest |
-| DPO | Attempted → **SFT shipped** | DPO regressed on a ~99% UltraMedical set (missed emergencies); honest negative result, fix = more safety pairs |
+| DPO | Attempted twice → **SFT v9 shipped** | DPO #1 regressed (UltraMedical-heavy); DPO #2 (direction-balanced) collapsed the middle class (0.80<0.82) — honest negative |
 | Serve | Merged 16-bit weights | Simplest single-model serving |
 | Endpoint liveness | Serverless scale-to-zero | Cheapest; cold-start reported honestly |
 | Experiment tracking | W&B | One-line, hosted curves, reproducibility |
@@ -134,9 +141,11 @@ Presidio verification pass is wired as a *hypothesis test* (expect ~0 PII; repor
 | Triage data licence | Exclude MIETIC/MIMIC | Credentialed no-redistribution licence |
 
 ## 10. Status
-**Done:** dataset built + documented; **SFT (Base) trained + eval'd** (0.67, both emergencies caught) —
-**served deliverable**, merged to 16-bit (`models/sft-base-merged-16bit/`); **DPO attempted but regressed**
-(→ SFT shipped); **Instruct comparison arm trained + eval'd** (0.33 — Base wins, validates the brief);
-eval harness, CI, repo + PR; all four creds (Kaggle/W&B/HF/GitLab) set. **Pending:** vLLM serving (RunPod
-*or* Modal) + FastAPI wrapper on the merged SFT model; CI deploy step; Presidio pass; fuller eval; report;
-**HF publish (deferred until user's full review)**. Optional later: safety-weighted DPO retry.
+**Done:** 3-LLM consensus triage labelling (κ≈0.67) replacing the heuristic; adversarial audit fixes
+(leak-free, consensus-clean eval); **SFT v9 trained + eval'd** (stratified n=300, macro-F1 **0.82**) — the
+**served deliverable**; **naive-Base baseline** (macro-F1 0.19 — the honest progress floor); **DPO #2**
+attempted (direction-balanced — macro-F1 0.80, analysed, **not shipped**); FastAPI `/triage` **serving
+wrapper built + unit-tested** (mocked vLLM) with Dockerfile + README; repo made **public** (PR #2
+squash-merged to `main`); **W&B results-comparison dashboard** (5 manually-logged eval summaries).
+**Pending:** live vLLM endpoint (RunPod *or* Modal — needs a credential); W&B **live training curves**
+(needs a `WANDB_API_KEY` Kaggle Secret + re-run); Presidio/GDPR pass; final report.

@@ -1,6 +1,6 @@
 # OC14 — Development journal
 
-> **Status:** intermediary, as of **2026-06-19**. May be updated as work continues.
+> **Status:** intermediary, as of **2026-06-29**. May be updated as work continues.
 > **Scope:** a factual record of what was done, the difficulties hit, plan changes, and the
 > engineering problems/solutions. Every entry is verifiable from this project's artifacts
 > (git history, `data/processed/_*_stats.json`, `data/raw/_inventory.json`, the Kaggle run
@@ -113,7 +113,7 @@ template was rendered locally with jinja2 before pushing) because each Kaggle ro
 ---
 
 ## Current artifacts
-- Repo: `ghislaindelabie/oc14-medical-triage-llm` (private), branch `feat/data-prep-and-scaffold`, PR #1.
+- Repo: `ghislaindelabie/oc14-medical-triage-llm` (**public** since ~2026-06-27, default `main`, PR #2 squash-merged), formerly private with work on `feat/data-prep-and-scaffold` (PR #1).
 - Data: `data/raw/` (collected, gitignored), `data/processed/*.jsonl` (SFT+DPO, gitignored), `data/cards/DATA_CARD.md`.
 - Model: `models/sft-base-lora/` (LoRA adapter, 69 MB, gitignored). Not yet on HF (pending `HF_TOKEN`).
 - Notebooks: `notebooks/oc14-sft-lora/`, `notebooks/oc14-sft-eval/` (+ generator `build_kaggle_notebooks.py`).
@@ -129,6 +129,8 @@ exact trained system prompt (read back from the data). Run on a Kaggle T4, `COMP
 - The 2 misses are both **low-urgency** cases (over-triaged or unlabelled) → erring toward *more* caution (the safe direction for triage).
 - **No repetition/degeneration** — confirms the earlier ugly sample was purely inference config (missing `<|im_end|>` stop + shortened prompt), not the trained weights.
 - **Caveat:** n=6 is a sanity check, not statistically meaningful; the `différée` (non-urgent) class is the weakest. A fuller eval (larger set, DPO comparison, base-vs-tuned) comes later.
+
+> **Superseded:** these n=6 sanity numbers predate the LLM-consensus eval; the statistically meaningful results are the n=300 stratified evals below (SFT v9 macro-F1 0.82).
 
 ## DPO outcome (Phase 3) — attempted, **measured regression → SFT shipped**
 Full DPO ran (1 epoch, ~45 min on T4) and the single post-DPO **merge succeeded** (valid 16-bit weights,
@@ -153,6 +155,9 @@ grow the hand-written safety/triage vignettes to ~300–500 (the §0b target) an
 safety-weighted mix (mostly safety pairs, subsampled UltraMedical) — the **data**, not the method, was the problem.
 
 ## Base vs Instruct vs DPO — comparison (Phase 3)
+> **Superseded as a headline:** the n=6 comparison + template-confound analysis below are retained as
+> history; the statistically meaningful numbers are the n=300 stratified evals (SFT v9 macro-F1 0.82).
+
 All three scored on the **same** 6 held-out hand-labelled vignettes, same correct inference:
 
 | Model | urgency acc | `urgence maximale` caught | format | disclaimer |
@@ -409,3 +414,8 @@ deliverable** (best balanced; DPO traded the middle for the extremes with no net
 
 **Next.** Serve SFT v9: merge to 16-bit → FastAPI `/triage` wrapper (smoke-test on P710 CPU) →
 RunPod serverless vLLM (model via private HF repo) → CI deploy → Presidio/GDPR pass → report.
+
+## Serving + publication (2026-06-27/29)
+- FastAPI `/triage` wrapper built (`src/oc14_triage/serving/app.py`): injects SYSTEM_PROMPT, stop on `<|im_end|>`, `enable_thinking=False`, API-key gate, privacy-safe audit log (no patient data). Unit-tested vs a mocked vLLM backend. Dockerfile + README alongside. Live RunPod/Modal endpoint pending a credential.
+- Repo made **public**; all work squash-merged to `main` via PR #2.
+- **W&B results-comparison dashboard** (`scripts/log_eval_to_wandb.py`): 5 arms — base 0.19 / sft-v8 0.813 RETRACTED / sft-v8-honest 0.653 / sft-v9 0.822 SERVED / dpo 0.799. These are **manually-logged final eval summaries** mirrored from P710 (provenance in each run's `config.kernel`), **not** live Kaggle training curves — live capture is wired but pending a `WANDB_API_KEY` Kaggle Secret + re-run.
