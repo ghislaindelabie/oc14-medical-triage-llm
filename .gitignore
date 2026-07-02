@@ -1,7 +1,15 @@
-# Data — raw/interim/processed are NOT committed (size + licensing). Provenance cards ARE (see !data/cards).
+# Data — raw/interim/processed are NOT committed (size). The FINAL shipped datasets
+# (open-licence sources + own synthetic — safe to publish) + provenance cards ARE committed.
 data/*
 !data/cards/
 !data/cards/**
+!data/kaggle_upload/
+!data/kaggle_upload/**
+!data/kaggle_upload_v10/
+!data/kaggle_upload_v10/**
+# Derived / runtime artefacts (not versioned)
+submission/
+.gradio/
 # Models / weights / checkpoints
 models/
 *.gguf

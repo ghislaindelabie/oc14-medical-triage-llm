@@ -24,6 +24,9 @@ eval = ["scikit-learn>=1.4"]
 label = ["openai>=1.30", "anthropic>=0.34"]
 # Local serving wrapper (FastAPI in front of vLLM).
 serving = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "httpx>=0.27", "openai>=1.30"]
+# Agentic triage POC: LangGraph orchestration + Gradio demo UI, on the FastAPI service.
+agent = ["langgraph>=0.2", "langchain-openai>=0.2", "gradio>=4.44",
+         "fastapi>=0.111", "uvicorn[standard]>=0.30", "httpx>=0.27", "openai>=1.30"]
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]
