@@ -106,7 +106,7 @@ def test_render_result_unavailable_shows_notice_not_fake_level():
     never a fabricated '**None**' urgency level."""
     md = render_result({"urgency": None, "needs_review": True, "interaction_id": "u1",
                         "justification": "Le modèle de triage démarre ou est momentanément indisponible.",
-                        "recommendation": "Réessayez dans ~1 min ; en attendant, ce cas relève de l'évaluation d'un clinicien.",
+                        "recommendation": "Réessayez dans ~1 min ; sinon, orienter vers un clinicien.",
                         "disclaimer_present": True}, "fr")
     assert "None" not in md
     assert "réessay" in md.lower()
