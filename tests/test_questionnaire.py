@@ -38,10 +38,31 @@ def test_benign_motif_asks_onset_then_severity():
     assert q2 is not None and ("intensit" in q2.lower() or "1" in q2 or "10" in q2)
 
 
-def test_core_fields_present_is_complete_and_no_more_questions():
-    answers = {"motif": "toux légère", "debut": "hier", "intensite": "3"}
-    assert is_complete(answers) is True
-    assert next_question(answers) is None
+def test_after_core_fields_asks_optional_vitals_then_completes():
+    # Core done → the OPTIONAL vitals step is offered before completing.
+    core = {"motif": "toux légère", "debut": "hier", "intensite": "3"}
+    q = next_question(core)
+    assert q is not None
+    low = q.lower()
+    assert any(w in low for w in ("constante", "tension", "saturation", "température"))
+    assert is_complete(core) is False
+    # Once vitals answered (even blank), the collecte is complete.
+    done = {**core, "vitals": "T° 38, SpO2 97%"}
+    assert is_complete(done) is True
+    assert next_question(done) is None
+
+
+def test_assemble_case_text_includes_vitals_when_present():
+    answers = {"motif": "douleur thoracique", "debut": "ce matin", "intensite": "8",
+               "vitals": "SpO2 88%, FC 120"}
+    text = assemble_case_text(answers)
+    assert "SpO2 88%" in text
+    assert "Constantes" in text
+
+
+def test_assemble_case_text_omits_blank_vitals():
+    answers = {"motif": "toux", "debut": "hier", "intensite": "2", "vitals": "  "}
+    assert "Constantes" not in assemble_case_text(answers)
 
 
 def test_incomplete_is_not_complete():

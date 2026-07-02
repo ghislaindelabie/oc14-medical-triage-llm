@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from .. import anonymization
 from ..config import DATA
 from .graph import process_case
-from .questionnaire import assemble_case_text, next_field, next_question
+from .questionnaire import assemble_case_text, is_optional, next_field, next_question
 from .store import Store
 
 
@@ -78,9 +78,10 @@ def answer(req: AnswerReq) -> dict:
     lang = lang if lang in ("fr", "en") else "fr"  # coerce unsupported langs
 
     field = next_field(answers, lang)
-    # A blank answer must not fill the field — re-ask the SAME question so collecte can't
-    # complete on empty input (which would yield a confident verdict on no information).
-    if field is not None and not req.answer.strip():
+    # A blank answer must not fill a REQUIRED field — re-ask the SAME question so collecte can't
+    # complete on empty input (which would yield a confident verdict on no information). An
+    # OPTIONAL field (vitals) is instead SKIPPED on blank so the collecte can complete.
+    if field is not None and not req.answer.strip() and not is_optional(field):
         return {"done": False, "field": field, "question": next_question(answers, lang)}
     if field is not None:
         answers[field] = req.answer
@@ -97,6 +98,8 @@ def answer(req: AnswerReq) -> dict:
         "done": True, "session_id": req.session_id, "urgency": final.get("urgency"),
         "justification": final.get("justification", ""),
         "recommendation": final.get("recommendation", ""),
+        "confidence": final.get("confidence"),
+        "needs_review": final.get("needs_review", False),
         "disclaimer_present": final.get("disclaimer_present", False),
         "interaction_id": final.get("interaction_id"), "anon_text": final.get("anon_text", ""),
         "red_flags": final.get("red_flags", []), "sih_record": final.get("sih_record", {}),

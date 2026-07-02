@@ -40,19 +40,32 @@ def test_start_asks_motif_first():
 
 def test_full_flow_redflag_reaches_maximale_and_anonymises():
     _, r = _run(["Jean Dupont, douleur thoracique aiguë", "irradie bras gauche, sueurs",
-                 "depuis 30 min", "9"])
+                 "depuis 30 min", "9", "SpO2 90%, FC 130"])
     assert r["done"] is True
     assert r["urgency"] == "urgence maximale"       # red-flag → escalated
     assert "Jean Dupont" not in r["anon_text"]        # PII gone
     assert r["interaction_id"] and r["disclaimer_present"] is True
     assert r["sih_record"]["resourceType"] == "Bundle"
+    assert r["confidence"] == "high"                  # red-flag + model agree
 
 
 def test_history_endpoint_has_no_pii():
-    sid, _ = _run(["Marie Curie, mal de gorge léger", "depuis hier", "3"])
+    sid, _ = _run(["Marie Curie, mal de gorge léger", "depuis hier", "3", ""])  # blank vitals skip
     hist = client.get(f"/session/{sid}").json()
     assert len(hist["interactions"]) == 1
     assert "Marie Curie" not in json.dumps(hist, ensure_ascii=False)
+
+
+def test_optional_vitals_can_be_skipped_blank():
+    """The vitals step is OPTIONAL: a blank answer skips it (no re-ask) and completes."""
+    sid = client.post("/session/start", json={"lang": "fr"}).json()["session_id"]
+    r = None
+    for a in ["toux légère", "hier", "2"]:
+        r = client.post("/session/answer", json={"session_id": sid, "answer": a}).json()
+    assert r["done"] is False and r["field"] == "vitals"   # optional vitals step offered
+    r = client.post("/session/answer", json={"session_id": sid, "answer": "   "}).json()
+    assert r["done"] is True
+    assert r.get("confidence") in ("high", "medium", "low")
 
 
 def test_answer_unknown_session_is_404():

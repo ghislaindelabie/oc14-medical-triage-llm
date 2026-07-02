@@ -167,7 +167,7 @@ def build_report(entries, out_path: Path, page_title: str, header_title: str, in
     contents_items = []
     for j, d in enumerate(docs):
         sec_links = "\n".join(
-            f'<li><a href="#{d["id"]}-{html.escape(sid)}">{html.escape(name)}</a></li>'
+            f'<li><a href="#{d["id"]}-{html.escape(sid)}">{html.escape(html.unescape(name))}</a></li>'
             for sid, name in d["sections"])
         open_attr = " open" if j == 0 else ""
         contents_items.append(f"""

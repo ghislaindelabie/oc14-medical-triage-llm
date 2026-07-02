@@ -16,8 +16,17 @@ def test_core_order_without_redflag():
     assert next_field({"motif": "mal de gorge", "debut": "hier"}) == "intensite"
 
 
-def test_none_when_complete():
-    assert next_field({"motif": "x", "debut": "y", "intensite": "5"}) is None
+def test_optional_vitals_offered_after_core_then_none():
+    core = {"motif": "x", "debut": "y", "intensite": "5"}
+    assert next_field(core) == "vitals"                    # optional vitals offered after core
+    assert next_field({**core, "vitals": ""}) is None       # answered (even blank) → done
+
+
+def test_vitals_is_optional_core_is_not():
+    from oc14_triage.agent.questionnaire import is_optional
+    assert is_optional("vitals") is True
+    assert is_optional("motif") is False
+    assert is_optional("intensite") is False
 
 
 def test_next_question_consistent_with_field():

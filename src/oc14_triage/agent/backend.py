@@ -24,9 +24,10 @@ from ..eval.metrics import extract_urgency
 VLLM_BASE_URL = os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1")
 MODEL_ID = os.environ.get("OC14_MODEL_ID", "oc14-triage")
 
-# timeout: never hang the request thread on an unresponsive vLLM endpoint.
+# timeout: never hang the request thread on an unresponsive vLLM endpoint. Configurable via
+# VLLM_TIMEOUT — raise it (e.g. 200) for a serverless endpoint whose first request cold-starts.
 _client = OpenAI(base_url=VLLM_BASE_URL, api_key=os.environ.get("VLLM_API_KEY", "EMPTY"),
-                 timeout=30)
+                 timeout=int(os.environ.get("VLLM_TIMEOUT", "30")))
 
 _DISCLAIMER = ("ne remplace pas", "does not replace")
 _DISCLAIMER_FR = "Cet avis ne remplace pas une consultation médicale."

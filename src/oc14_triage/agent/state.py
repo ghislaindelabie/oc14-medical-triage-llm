@@ -62,6 +62,8 @@ class TriageCase(TypedDict, total=False):
     justification: str
     recommendation: str
     disclaimer_present: bool
+    confidence: str  # derived runtime confidence: "high" | "medium" | "low"
+    needs_review: bool  # True → route to a clinician (low confidence / rule-model disagreement)
 
     # persistance / SIH
     timestamp_utc: str

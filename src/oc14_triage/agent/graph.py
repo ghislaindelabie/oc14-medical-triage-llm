@@ -61,31 +61,54 @@ def _triage(state: TriageCase) -> dict:
 
 def _explication(state: TriageCase) -> dict:
     p = parse_triage(state.get("model_output", ""))
-    urgency = p["urgency"]
+    parsed_urgency = p["urgency"]
     justification = p["justification"]
-    # Safety override (the one conditional): a detected red-flag can only be >= maximale.
-    if state.get("red_flags") and urgency != MAX:
+    red_flags = state.get("red_flags")
+    # Track the two decisions that inform the runtime confidence, computed on the PARSED level
+    # (before we rewrite `urgency`): whether the safety override had to escalate, and whether
+    # the model gave no parseable level at all.
+    override_applied = bool(red_flags) and parsed_urgency != MAX
+    unparsed = parsed_urgency not in URGENCY_LEVELS
+    if override_applied:
+        # Safety override (the one conditional): a detected red-flag can only be >= maximale.
         urgency = MAX
-    # Fallback: unparseable model output leaves urgency=None (or off-scale) — default to a
-    # safe modérée rather than let a None crash the FHIR coding downstream, and note it.
-    if urgency not in URGENCY_LEVELS:
+    elif unparsed:
+        # Fallback: unparseable model output (and no red-flag rescue) — default to a safe
+        # modérée rather than let a None crash the FHIR coding downstream, and note it.
         urgency = _DEFAULT_URGENCY
         note = "réponse du modèle non structurée — niveau par défaut appliqué (urgence modérée)."
         justification = f"{justification} {note}".strip() if justification else note
+    else:
+        urgency = parsed_urgency
+    # Derived runtime confidence (heuristic — the calibrated logprobs version is roadmap, cf.
+    # rapport §8): no usable answer OR a rule-vs-model disagreement → low (→ clinician review);
+    # red-flag rule and model agree → high; otherwise medium.
+    if unparsed or override_applied:
+        confidence = "low"
+    elif red_flags:
+        confidence = "high"
+    else:
+        confidence = "medium"
     return {"urgency": urgency, "justification": justification,
-            "recommendation": p["recommendation"], "disclaimer_present": p["disclaimer_present"]}
+            "recommendation": p["recommendation"], "disclaimer_present": p["disclaimer_present"],
+            "confidence": confidence, "needs_review": confidence == "low"}
 
 
 def _persistance(state: TriageCase, store) -> dict:
     iid = state.get("interaction_id") or str(uuid.uuid4())
     ts = datetime.now(UTC).isoformat()
+    # Vitals collected by the questionnaire → stored as `constantes`. Anonymised too (defensive:
+    # physiological values aren't PII, but a patient could type a name/phone into the field).
+    vitals_raw = str((state.get("answers") or {}).get("vitals", "") or "").strip()
+    constantes = (anonymize(vitals_raw, mode="runtime", lang=state.get("lang", "fr")).text
+                  if vitals_raw else "")
     case = {
         "session_id": state.get("session_id"), "interaction_id": iid, "timestamp_utc": ts,
         "model_version": state.get("model_version"), "symptoms_anon": state.get("anon_text"),
-        "antecedents_anon": "", "constantes": "", "urgency": state.get("urgency"),
+        "antecedents_anon": "", "constantes": constantes, "urgency": state.get("urgency"),
         "justification": state.get("justification"),
         "recommandation_anon": state.get("recommendation"), "source": "chsa-triage-poc",
-        "confidence_level": "", "input_sha256": state.get("input_sha256"),
+        "confidence_level": state.get("confidence", ""), "input_sha256": state.get("input_sha256"),
         "disclaimer_present": int(bool(state.get("disclaimer_present"))),
         "latency_ms": round(sum(t["ms"] for t in state.get("trace", [])), 1), "deleted": 0,
     }

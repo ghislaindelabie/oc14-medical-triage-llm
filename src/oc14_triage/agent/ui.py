@@ -14,6 +14,7 @@ import httpx
 SERVICE_URL = os.environ.get("AGENT_SERVICE_URL", "http://localhost:8080")
 
 _ICON = {"urgence maximale": "🔴", "urgence modérée": "🟠", "urgence différée": "🟢"}
+_CONF_FR = {"high": "élevée", "medium": "moyenne", "low": "faible"}
 
 _SERVICE_DOWN_MSG = "⚠️ Le service de triage est momentanément indisponible, réessayez."
 
@@ -28,6 +29,12 @@ def render_result(result: dict, lang: str = "fr") -> str:
     ]
     if result.get("red_flags"):
         lines.append(f"**Signes d'alerte détectés :** {', '.join(result['red_flags'])}")
+    conf = result.get("confidence")
+    if conf:
+        line = f"**Fiabilité de l'analyse :** {_CONF_FR.get(conf, conf)}"
+        if result.get("needs_review"):
+            line += " — ⚑ _ce cas sera transmis à un clinicien pour revue._"
+        lines.append(line)
     lines.append(f"_Réf. dossier : `{result.get('interaction_id', '?')}` · "
                  f"texte transmis (anonymisé) : {result.get('anon_text', '')}_")
     lines.append("_Cet avis ne remplace pas une consultation médicale._"
@@ -55,22 +62,38 @@ def _get(path: str) -> dict:
     return _request("GET", path, timeout=30)
 
 
+def _msg(role: str, content: str) -> dict:
+    """One Gradio 'messages'-format chat entry (Gradio 6 Chatbot requires role/content dicts)."""
+    return {"role": role, "content": content}
+
+
 def _start(lang: str):
     r = _post("/session/start", {"lang": lang})
     if r.get("detail") or "question" not in r:
-        return "", [(None, _SERVICE_DOWN_MSG)]
-    return r["session_id"], [(None, r["question"])]
+        return "", [_msg("assistant", _SERVICE_DOWN_MSG)]
+    return r["session_id"], [_msg("assistant", r["question"])]
+
+
+def _refresh(session_id: str) -> dict:
+    """Traceability panel content: the session dossier, or a friendly placeholder before any
+    consultation — an empty session id would hit GET /session/ → a raw 404 blob otherwise."""
+    if not session_id:
+        return {"interactions": [], "info": "Aucune consultation en cours."}
+    return _get(f"/session/{session_id}")
 
 
 def _answer(message: str, history: list, session_id: str, lang: str):
     if not session_id:
-        session_id, history = _start(lang)
+        # Bootstrap a session on the first turn; keep the caller's history (don't adopt the
+        # greeting — the user's message already answers the first field) and never double-print.
+        session_id, _ = _start(lang)
     r = _post("/session/answer", {"session_id": session_id, "answer": message})
     if r.get("detail") or not (r.get("done") or r.get("question")):
         # Service error or malformed payload → friendly message, never a blank verdict card.
-        return history + [(message, _SERVICE_DOWN_MSG)], "", session_id
-    bot = render_result(r, lang) if r.get("done") else r.get("question", "…")
-    return history + [(message, bot)], "", session_id
+        bot = _SERVICE_DOWN_MSG
+    else:
+        bot = render_result(r, lang) if r.get("done") else r.get("question", "…")
+    return history + [_msg("user", message), _msg("assistant", bot)], "", session_id
 
 
 def build_ui():
@@ -87,6 +110,7 @@ def build_ui():
         # Static greeting; the session is bootstrapped lazily on the first answer (no API call
         # on page load, so a page refresh never fails if the backend is still warming up).
         gr.Markdown("👋 _Décrivez le **motif de consultation** pour démarrer le triage._")
+        # Gradio 6 Chatbot is messages-only (role/content dicts) — the `type` kwarg was removed.
         chatbot = gr.Chatbot(label="Questionnaire de triage", height=380)
         msg = gr.Textbox(label="Votre réponse", placeholder="Décrivez les symptômes…")
         with gr.Row():
@@ -99,13 +123,19 @@ def build_ui():
         send.click(_answer, [msg, chatbot, session, lang], [chatbot, msg, session])
         msg.submit(_answer, [msg, chatbot, session, lang], [chatbot, msg, session])
         restart.click(_start, inputs=lang, outputs=[session, chatbot])
-        refresh.click(lambda sid: _get(f"/session/{sid}"), inputs=session, outputs=trace_out)
+        refresh.click(_refresh, inputs=session, outputs=trace_out)
 
     return demo
 
 
 def main() -> None:
-    build_ui().launch(server_name="0.0.0.0", server_port=int(os.environ.get("UI_PORT", "7860")))
+    # UI_SHARE=1 → Gradio creates a public *.gradio.live tunnel (72 h) so a remote evaluator
+    # can reach the demo without tailnet/LAN access.
+    build_ui().launch(
+        server_name="0.0.0.0",
+        server_port=int(os.environ.get("UI_PORT", "7860")),
+        share=os.environ.get("UI_SHARE") == "1",
+    )
 
 
 if __name__ == "__main__":

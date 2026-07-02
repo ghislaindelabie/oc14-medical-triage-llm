@@ -39,9 +39,66 @@ def test_answer_renders_friendly_message_on_service_error(monkeypatch):
     # FR "service unavailable" message, NOT a blank verdict card.
     monkeypatch.setattr(ui_mod, "_post", lambda path, payload: {"detail": "boom"})
     history, cleared, sid = ui_mod._answer("douleur", [], "sess-1", "fr")
-    _, bot = history[-1]
-    assert "momentanément indisponible" in bot.lower()
-    assert "urgence maximale" not in bot.lower()  # no confident verdict rendered
+    last = history[-1]
+    assert last["role"] == "assistant"
+    assert "momentanément indisponible" in last["content"].lower()
+    assert "urgence maximale" not in last["content"].lower()  # no confident verdict rendered
+
+
+def test_answer_and_start_use_gradio_messages_format(monkeypatch):
+    """Gradio 6 Chatbot is type='messages' → every history entry MUST be a {role, content}
+    dict, never a (user, bot) tuple (which crashes postprocess). Regression guard for that crash."""
+    import gradio as gr
+    monkeypatch.setattr(ui_mod, "_post",
+                        lambda p, payload: {"session_id": "s1", "question": "Quel est le motif ?"})
+    sid, hist0 = ui_mod._start("fr")
+    assert all(isinstance(m, dict) and {"role", "content"} <= set(m) for m in hist0)
+    monkeypatch.setattr(ui_mod, "_post", lambda p, payload: {
+        "done": True, "urgency": "urgence différée", "justification": "x",
+        "recommendation": "y", "disclaimer_present": True, "interaction_id": "id1"})
+    hist, _, _ = ui_mod._answer("toux légère", hist0, "s1", "fr")
+    assert all(isinstance(m, dict) and {"role", "content"} <= set(m) for m in hist)
+    assert hist[-2]["role"] == "user" and hist[-1]["role"] == "assistant"
+    # Gradio's own Chatbot format check must accept it — exactly the call that raised before.
+    gr.Chatbot()._check_format(hist)
+
+
+def test_render_result_shows_low_confidence_and_review_flag():
+    md = render_result({**_DONE, "confidence": "low", "needs_review": True}, "fr")
+    assert "faible" in md.lower()
+    assert "clinicien" in md.lower()   # HITL review notice surfaced
+
+
+def test_render_result_high_confidence_has_no_review_notice():
+    md = render_result({**_DONE, "confidence": "high", "needs_review": False}, "fr")
+    assert "élevée" in md.lower()
+    assert "revue" not in md.lower()   # no clinician-review notice when confident
+
+
+def test_refresh_empty_session_shows_placeholder_not_404(monkeypatch):
+    """Refreshing the dossier before any consultation must show a friendly placeholder, never a
+    raw HTTP-404 blob (an empty session id would otherwise hit GET /session/ → 404)."""
+    calls = []
+    monkeypatch.setattr(ui_mod, "_get",
+                        lambda path: calls.append(path) or {"detail": "Client error '404 Not Found'"})
+    out = ui_mod._refresh("")
+    assert calls == []                     # no HTTP call made for an empty session
+    assert "404" not in str(out)
+    assert "interactions" in out
+
+
+def test_refresh_valid_session_fetches_dossier(monkeypatch):
+    monkeypatch.setattr(ui_mod, "_get", lambda path: {"session_id": "s1", "interactions": [{"x": 1}]})
+    assert ui_mod._refresh("s1")["interactions"] == [{"x": 1}]
+
+
+def test_answer_bootstrap_while_service_down_prints_single_message(monkeypatch):
+    """Empty session + service down during bootstrap → exactly ONE 'indisponible' message
+    (not doubled), and any passed-in history is preserved."""
+    monkeypatch.setattr(ui_mod, "_post", lambda p, payload: {"detail": "boom"})
+    hist, _, _ = ui_mod._answer("douleur", [], "", "fr")
+    downs = [m for m in hist if isinstance(m, dict) and "indisponible" in m.get("content", "").lower()]
+    assert len(downs) == 1
 
 
 def test_build_ui_returns_blocks():

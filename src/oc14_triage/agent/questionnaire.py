@@ -13,17 +13,26 @@ from .state import RED_FLAGS
 # Core fields, asked in this order. "motif" = chief complaint, "debut" = onset,
 # "intensite" = severity on a 1-10 scale.
 CORE_FIELDS = ("motif", "debut", "intensite")
+# Optional trailing fields: offered once, after the core fields. A BLANK answer skips them
+# (the service treats a blank on an optional field as "skip", not "re-ask"), so they never
+# block completion. "vitals" = free-text vital signs (T°, TA, pouls, SpO₂) — a strong triage
+# signal the model can reason over; injected into the case text and stored as `constantes`.
+OPTIONAL_FIELDS = ("vitals",)
 
 _QUESTIONS = {
     "fr": {
         "motif": "Quel est le motif de consultation ? Décrivez ce qui vous amène.",
         "debut": "Depuis quand ces symptômes ont-ils débuté ?",
         "intensite": "Sur une échelle de 1 à 10, quelle est l'intensité de vos symptômes ?",
+        "vitals": "Si vous les connaissez, indiquez vos constantes — température, tension, "
+                  "pouls, saturation (SpO₂). Sinon, laissez vide pour continuer.",
     },
     "en": {
         "motif": "What is the reason for your visit? Describe what brings you in.",
         "debut": "When did these symptoms begin (onset)?",
         "intensite": "On a scale of 1 to 10, how severe are your symptoms?",
+        "vitals": "If known, enter your vital signs — temperature, blood pressure, pulse, "
+                  "oxygen saturation (SpO₂). Otherwise leave blank to continue.",
     },
 }
 
@@ -61,19 +70,27 @@ _TEMPLATE = {
         "debut": "Début : {}.",
         "intensite": "Intensité (1-10) : {}.",
         "followup": "Précision : {}.",
+        "vitals": "Constantes : {}.",
     },
     "en": {
         "motif": "Chief complaint: {}.",
         "debut": "Onset: {}.",
         "intensite": "Severity (1-10): {}.",
         "followup": "Detail: {}.",
+        "vitals": "Vitals: {}.",
     },
 }
 
 
+def is_optional(field: str) -> bool:
+    """True for fields the collecte offers but does not require (a blank answer skips them)."""
+    return field in OPTIONAL_FIELDS
+
+
 def is_complete(answers: dict) -> bool:
-    """True once the three core fields (motif, debut, intensite) are gathered."""
-    return all(f in answers for f in CORE_FIELDS)
+    """True once the collecte has nothing left to ask — the core fields are gathered AND the
+    optional steps (vitals) have been offered (answered or explicitly skipped)."""
+    return next_field(answers) is None
 
 
 def assemble_case_text(answers: dict, lang: str = "fr") -> str:
@@ -81,7 +98,7 @@ def assemble_case_text(answers: dict, lang: str = "fr") -> str:
 
     Ordered motif -> followup -> debut -> intensite; only non-empty fields are emitted so a
     partially-filled dossier still yields usable text."""
-    order = ("motif", "followup", "debut", "intensite")
+    order = ("motif", "followup", "debut", "intensite", "vitals")
     tmpl = _TEMPLATE[lang]
     parts = [tmpl[f].format(str(answers[f]).strip()) for f in order
              if f in answers and str(answers[f]).strip()]
@@ -101,6 +118,9 @@ def next_field(answers: dict, lang: str = "fr") -> str | None:
     if "followup" not in answers and _followup_cue(answers["motif"], lang) is not None:
         return "followup"
     for field in CORE_FIELDS:
+        if field not in answers:
+            return field
+    for field in OPTIONAL_FIELDS:
         if field not in answers:
             return field
     return None

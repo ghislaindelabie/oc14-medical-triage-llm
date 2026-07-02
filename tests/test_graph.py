@@ -70,3 +70,52 @@ def test_trace_records_node_timing(tmp_path):
     nodes = [t["node"] for t in final["trace"]]
     assert {"anonymisation", "pretraitement", "triage", "explication", "persistance", "sih"} <= set(nodes)
     assert all(isinstance(t["ms"], (int, float)) for t in final["trace"])
+
+
+# --- Derived runtime confidence (option 2: from rule/model agreement + parse success) -------
+
+def test_confidence_high_when_redflag_and_model_agree(tmp_path):
+    # Red-flag input → stub returns maximale → rule & model AGREE → high confidence, no review.
+    final = gmod.process_case("douleur thoracique aiguë et sueurs", lang="fr",
+                              session_id="c1", store=Store(tmp_path / "d.db"))
+    assert final["urgency"] == "urgence maximale"
+    assert final["confidence"] == "high"
+    assert final["needs_review"] is False
+
+
+def test_confidence_low_when_override_corrects_undertriage(tmp_path, monkeypatch):
+    # Model under-triages a red-flag → safety override escalates, but rule/model DISAGREE →
+    # low confidence, flag for clinician review.
+    monkeypatch.setattr(gmod, "triage_once",
+                        lambda *a, **k: "1. Niveau d'urgence : urgence différée. "
+                        "2. Justification : x. 3. Recommandation : y. "
+                        "Cet avis ne remplace pas une consultation médicale.")
+    final = gmod.process_case("douleur thoracique constrictive", lang="fr",
+                              session_id="c2", store=Store(tmp_path / "d.db"))
+    assert final["urgency"] == "urgence maximale"
+    assert final["confidence"] == "low"
+    assert final["needs_review"] is True
+
+
+def test_confidence_low_when_output_unstructured(tmp_path, monkeypatch):
+    monkeypatch.setattr(gmod, "triage_once", lambda *a, **k: "garbage no structure")
+    final = gmod.process_case("mal de dos depuis une semaine", lang="fr",
+                              session_id="c3", store=Store(tmp_path / "d.db"))
+    assert final["confidence"] == "low"
+    assert final["needs_review"] is True
+
+
+def test_confidence_medium_on_clean_case_without_redflag(tmp_path):
+    final = gmod.process_case("mal de gorge modéré depuis hier", lang="fr",
+                              session_id="c4", store=Store(tmp_path / "d.db"))
+    assert final["confidence"] == "medium"
+    assert final["needs_review"] is False
+
+
+def test_dossier_records_confidence_and_anonymised_vitals(tmp_path):
+    store = Store(tmp_path / "d.db")
+    gmod.process_case("mal de tête modéré", lang="fr", session_id="c5", store=store,
+                      answers={"motif": "mal de tête modéré", "vitals": "T° 37, SpO2 98%"})
+    row = store.history("c5")[0]
+    assert row["confidence_level"] in ("high", "medium", "low")
+    assert "SpO2 98%" in row["constantes"]   # vitals persisted (no PII to strip)
