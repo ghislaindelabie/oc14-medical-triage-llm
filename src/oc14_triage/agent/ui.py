@@ -21,9 +21,11 @@ _SERVICE_DOWN_MSG = "⚠️ Le service de triage est momentanément indisponible
 
 def render_result(result: dict, lang: str = "fr") -> str:
     """Format a completed triage result as markdown (verdict, justification, reco, req-id)."""
-    urg = result.get("urgency", "")
+    urg = result.get("urgency") or ""
+    header = (f"### {_ICON.get(urg, '⚪')} Niveau d'urgence : **{urg}**" if urg
+              else "### ⏳ Triage indisponible — réessayez dans ~1 min")
     lines = [
-        f"### {_ICON.get(urg, '⚪')} Niveau d'urgence : **{urg}**",
+        header,
         f"**Justification :** {result.get('justification', '')}",
         f"**Recommandation :** {result.get('recommendation', '')}",
     ]

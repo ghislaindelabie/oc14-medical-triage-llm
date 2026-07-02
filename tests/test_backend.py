@@ -81,8 +81,9 @@ def test_real_path_passes_temperature_stop_and_system_prompt(monkeypatch):
     assert system_msg["content"] == SYSTEM_PROMPT["fr"]
 
 
-def test_real_path_backend_error_returns_safe_fallback(monkeypatch):
-    """A backend/network failure must degrade to a SAFE structured triage, never raise."""
+def test_real_path_backend_error_returns_unavailable_sentinel(monkeypatch):
+    """A backend/network failure (incl. cold-start timeout) returns the UNAVAILABLE sentinel —
+    NOT a fabricated triage. The graph turns it into an honest 'model unavailable' message."""
     import openai
 
     def _boom(**kwargs):
@@ -91,10 +92,4 @@ def test_real_path_backend_error_returns_safe_fallback(monkeypatch):
     monkeypatch.setattr(bk._client.chat.completions, "create", _boom)
 
     out = bk.triage_once("douleur au genou depuis une semaine", lang="fr", stub=False)
-    low = out.lower()
-    assert "urgence modérée" in low            # safe default level
-    assert "ne remplace pas" in low            # FR disclaimer preserved
-    # and it is still parseable into the three-part structure
-    parsed = bk.parse_triage(out)
-    assert parsed["urgency"] == "urgence modérée"
-    assert parsed["recommendation"].strip()
+    assert out == bk._UNAVAILABLE              # sentinel, no fabricated urgency verdict

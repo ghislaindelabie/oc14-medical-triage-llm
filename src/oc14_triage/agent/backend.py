@@ -32,14 +32,11 @@ _client = OpenAI(base_url=VLLM_BASE_URL, api_key=os.environ.get("VLLM_API_KEY", 
 _DISCLAIMER = ("ne remplace pas", "does not replace")
 _DISCLAIMER_FR = "Cet avis ne remplace pas une consultation médicale."
 
-# Safe, structured triage returned when the backend is unreachable/errors — degrades to a
-# moderate level with a clear "service unavailable" justification rather than raising.
-_SAFE_FALLBACK = (
-    "1. Niveau d'urgence : urgence modérée.\n"
-    "2. Justification : service de triage momentanément indisponible.\n"
-    "3. Recommandation : orienter vers une évaluation médicale.\n"
-    f"{_DISCLAIMER_FR}"
-)
+# Sentinel returned when the vLLM backend is unreachable / times out (e.g. serverless cold
+# start). The graph turns it into an honest "model unavailable → retry + defer to a clinician"
+# notice with NO fabricated urgency verdict — except a detected red-flag still escalates
+# (safety override). See graph._explication.
+_UNAVAILABLE = "__MODEL_UNAVAILABLE__"
 
 # Benign-side keyword cues → downgrade below the default modérée to différée.
 _DEFERRED_CUES = ("rhume", "petit", "léger", "bénin", "depuis longtemps", "chronique stable")
@@ -89,8 +86,9 @@ def triage_once(anon_text: str, lang: str = "fr", *, red_flags: list | None = No
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
     except openai.OpenAIError:
-        # Any backend/network/timeout failure → safe structured fallback, never propagate.
-        return _SAFE_FALLBACK
+        # Any backend/network/timeout failure (incl. serverless cold start) → unavailable
+        # sentinel, never propagate. The graph produces an honest, verdict-free notice.
+        return _UNAVAILABLE
     return (r.choices[0].message.content or "").strip()
 
 

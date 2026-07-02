@@ -101,6 +101,18 @@ def test_answer_bootstrap_while_service_down_prints_single_message(monkeypatch):
     assert len(downs) == 1
 
 
+def test_render_result_unavailable_shows_notice_not_fake_level():
+    """When the model is unavailable (urgency None), show a clear retry/clinician notice —
+    never a fabricated '**None**' urgency level."""
+    md = render_result({"urgency": None, "needs_review": True, "interaction_id": "u1",
+                        "justification": "Le modèle de triage démarre ou est momentanément indisponible.",
+                        "recommendation": "Réessayez dans ~1 min ; sinon, orienter vers un clinicien.",
+                        "disclaimer_present": True}, "fr")
+    assert "None" not in md
+    assert "réessay" in md.lower()
+    assert "clinicien" in md.lower()
+
+
 def test_build_ui_returns_blocks():
     import gradio as gr
     assert isinstance(build_ui(), gr.Blocks)

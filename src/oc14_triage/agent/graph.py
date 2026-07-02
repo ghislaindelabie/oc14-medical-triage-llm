@@ -19,7 +19,7 @@ from langgraph.graph import END, START, StateGraph
 
 from ..anonymization import anonymize, sha256_text
 from ..config import URGENCY_LEVELS
-from .backend import parse_triage, triage_once
+from .backend import _UNAVAILABLE, parse_triage, triage_once
 from .questionnaire import detect_red_flags
 from .sih import to_fhir
 from .state import TriageCase
@@ -60,10 +60,25 @@ def _triage(state: TriageCase) -> dict:
 
 
 def _explication(state: TriageCase) -> dict:
-    p = parse_triage(state.get("model_output", ""))
+    model_output = state.get("model_output", "")
+    red_flags = state.get("red_flags")
+    # Backend unavailable (serverless cold start / outage): emit an HONEST notice — no fabricated
+    # verdict. A detected red-flag still escalates to maximale (safety override wins).
+    if model_output == _UNAVAILABLE:
+        if red_flags:
+            return {"urgency": MAX, "confidence": "low", "needs_review": True,
+                    "disclaimer_present": True,
+                    "justification": "Signe(s) d'alerte détecté(s) ; modèle de triage momentanément "
+                                     "indisponible — escalade de sécurité.",
+                    "recommendation": "Prise en charge immédiate ; réessayer l'analyse dans ~1 min."}
+        return {"urgency": None, "confidence": "low", "needs_review": True,
+                "disclaimer_present": True,
+                "justification": "Le modèle de triage démarre ou est momentanément indisponible.",
+                "recommendation": "Réessayez dans ~1 min ; en attendant, ce cas relève de "
+                                  "l'évaluation d'un clinicien."}
+    p = parse_triage(model_output)
     parsed_urgency = p["urgency"]
     justification = p["justification"]
-    red_flags = state.get("red_flags")
     # Track the two decisions that inform the runtime confidence, computed on the PARSED level
     # (before we rewrite `urgency`): whether the safety override had to escalate, and whether
     # the model gave no parseable level at all.
