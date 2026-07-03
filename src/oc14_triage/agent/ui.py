@@ -76,12 +76,14 @@ def _start(lang: str):
     return r["session_id"], [_msg("assistant", r["question"])]
 
 
-def _refresh(session_id: str) -> dict:
-    """Traceability panel content: the session dossier, or a friendly placeholder before any
-    consultation — an empty session id would hit GET /session/ → a raw 404 blob otherwise."""
-    if not session_id:
+def _refresh() -> dict:
+    """Traceability panel content: the GLOBAL dossier archive (every case AND every re-evaluation
+    turn, across all sessions) via GET /trace — so an evaluator who submits several cases, or
+    refines one across follow-ups, sees the advice evolving, not just the latest single turn."""
+    r = _get("/trace")
+    if r.get("detail"):
         return {"interactions": [], "info": "Aucune consultation en cours."}
-    return _get(f"/session/{session_id}")
+    return r
 
 
 def _answer(message: str, history: list, session_id: str, lang: str):
@@ -119,13 +121,13 @@ def build_ui():
             send = gr.Button("Envoyer", variant="primary")
             restart = gr.Button("Nouvelle consultation")
         with gr.Accordion("Traçabilité — dossier (anonymisé)", open=False):
-            trace_out = gr.JSON(label="Dossier SIH / historique")
+            trace_out = gr.JSON(label="Dossier de traçabilité (anonymisé)")
             refresh = gr.Button("Rafraîchir le dossier")
 
         send.click(_answer, [msg, chatbot, session, lang], [chatbot, msg, session])
         msg.submit(_answer, [msg, chatbot, session, lang], [chatbot, msg, session])
         restart.click(_start, inputs=lang, outputs=[session, chatbot])
-        refresh.click(_refresh, inputs=session, outputs=trace_out)
+        refresh.click(_refresh, inputs=None, outputs=trace_out)
 
     return demo
 

@@ -98,6 +98,23 @@ def test_all_sessions_returns_distinct_session_ids(store):
     assert set(store.all_sessions()) == {"s1", "s2"}
 
 
+def test_all_interactions_returns_every_row_across_sessions_ordered(store):
+    """The global traceability archive: every non-deleted interaction across ALL sessions,
+    oldest first — so a demo panel can show every case an evaluator submitted."""
+    store.record({"interaction_id": "a", "session_id": "s1", "timestamp_utc": "2026-01-01T00:00:00"})
+    store.record({"interaction_id": "b", "session_id": "s2", "timestamp_utc": "2026-01-03T00:00:00"})
+    store.record({"interaction_id": "c", "session_id": "s1", "timestamp_utc": "2026-01-02T00:00:00"})
+    rows = store.all_interactions()
+    assert [r["interaction_id"] for r in rows] == ["a", "c", "b"]  # ordered by ts, across sessions
+
+
+def test_all_interactions_excludes_soft_deleted(store):
+    store.record({"interaction_id": "keep", "session_id": "s1", "timestamp_utc": "2026-01-01T00:00:00"})
+    store.record({"interaction_id": "gone", "session_id": "s2", "timestamp_utc": "2026-01-02T00:00:00"})
+    store.soft_delete("gone")
+    assert [r["interaction_id"] for r in store.all_interactions()] == ["keep"]
+
+
 def test_record_is_thread_safe(store):
     """Concurrent record() from many threads must land every row and never raise."""
     import threading

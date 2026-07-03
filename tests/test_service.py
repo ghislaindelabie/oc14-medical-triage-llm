@@ -73,6 +73,45 @@ def test_answer_unknown_session_is_404():
                        json={"session_id": "nope", "answer": "x"}).status_code == 404
 
 
+def test_trace_endpoint_archives_cases_across_sessions():
+    """GET /trace returns the GLOBAL dossier archive — every case AND every re-evaluation turn
+    across every session — so the demo panel shows all cases an evaluator submitted."""
+    _run(["mal de dos", "hier", "4", ""])                       # session 1, one case
+    _run(["entorse cheville", "ce matin", "5", ""])             # session 2, a DIFFERENT case
+    trace = client.get("/trace").json()
+    joined = " || ".join(it["symptoms_anon"] for it in trace["interactions"])
+    assert "mal de dos" in joined
+    assert "entorse cheville" in joined                          # both distinct cases present
+    assert len(trace["interactions"]) >= 2
+
+
+def test_followup_after_verdict_accumulates_and_appends_new_interaction():
+    """After the verdict, a free-text follow-up is an 'information complémentaire': it is
+    accumulated, the WHOLE case is re-assembled, and a NEW interaction is appended to the SAME
+    session (advice evolving) — NOT a stale re-triage of the old answers."""
+    sid, r0 = _run(["mal de tête", "hier", "4", ""])
+    assert r0["done"] is True
+    before = len(client.get(f"/session/{sid}").json()["interactions"])
+    r1 = client.post("/session/answer",
+                     json={"session_id": sid, "answer": "j'ai aussi de la fièvre à 39"}).json()
+    assert r1["done"] is True
+    assert "fièvre" in r1["anon_text"] or "39" in r1["anon_text"]   # complement folded into case
+    hist = client.get(f"/session/{sid}").json()["interactions"]
+    assert len(hist) == before + 1                                  # new turn appended, same session
+
+
+def test_followup_with_redflag_reescalates_updated_verdict():
+    """A follow-up that introduces a red-flag must re-escalate the UPDATED verdict to maximale —
+    red-flag detection + confidence re-run on the AUGMENTED text, not the original answers."""
+    sid, r0 = _run(["mal de dos léger", "hier", "3", ""])
+    assert r0["urgency"] != "urgence maximale"                      # benign to start
+    r1 = client.post("/session/answer", json={
+        "session_id": sid, "answer": "maintenant j'ai une douleur thoracique et j'étouffe"}).json()
+    assert r1["done"] is True
+    assert r1["urgency"] == "urgence maximale"                      # red-flag in complement escalates
+    assert "douleur thoracique" in r1["red_flags"]
+
+
 def test_blank_answer_reasks_same_field_and_does_not_complete():
     """A blank answer must re-ask the SAME field, never advance / complete the collecte."""
     start = client.post("/session/start", json={"lang": "fr"}).json()
