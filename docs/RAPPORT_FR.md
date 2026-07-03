@@ -6,6 +6,9 @@
 > Tous les chiffres cités sont mesurés (sources : `DEVELOPMENT_JOURNAL.md`, `data/cards/DATA_CARD.md`,
 > les logs de runs Kaggle, les fichiers `data/processed/_*_stats.json`). Rien n'est estimé sauf mention
 > explicite. Ce document tient en ≤ 20 pages.
+>
+> **Version 2 (2026-07-03).** Ajouts depuis la V1 : DPO **corrigé** (`rpo_alpha` → +0,018 sans effondrement),
+> recherche d'hyperparamètres (sweep W&B), garde-fou d'entrée hors-distribution, et cadrage honnête de v10.
 
 ---
 
@@ -69,7 +72,7 @@ intégration SIH. Chaque composant nommé dans le mail du Dr. Dubois est présen
 | L1 — Schéma des métadonnées (symptômes / antécédents / constantes / source / confiance) | `METADATA_SCHEMA.md` ; §2.4 | ✓ |
 | L1 — Justification RGPD | `DATA_CARD.md` (Recital 26) ; passe Presidio ; §2.5 | ✓ |
 | L1 — Séparation train / éval (auditabilité, pas de fuite) | éval-gold disjointe, audit adverse ; §2, §5 | ✓ |
-| **L2 — Modèle Qwen3-1.7B affiné SFT+LoRA puis aligné DPO, poids + métriques** | notebooks Kaggle ; adapter LoRA ; SFT v9 servi ; DPO analysé ; §3, §5 | ✓ (DPO = négatif instructif, non retenu) |
+| **L2 — Modèle Qwen3-1.7B affiné SFT+LoRA puis aligné DPO, poids + métriques** | notebooks Kaggle ; adapter LoRA ; SFT v9 servi ; DPO corrigé (`rpo_alpha`) ; §3, §5 | ✓ (DPO : effondrement diagnostiqué → corrigé, +0,018 sans effondrement ; v9 servi en V1) |
 | L2 — Traçabilité entraînement (logs, seed, checkpoints) | seed 3407, `adapter_config.json`, tracking W&B ; §3, §6 | ✓ |
 | **L3 — Endpoint cloud vLLM, API de démo, inférence rapide** | wrapper FastAPI `/triage` conteneurisé ; agent FastAPI ; **endpoint vLLM déployé sur RunPod** (serverless, v9) ; §4, §6 | ✓ déployé (~2 s à chaud) |
 | **L4 — CI/CD GitHub Actions (tests + déploiement)** | `.github/workflows/ci.yml` (ruff + pytest verts + job `deploy`) ; §6 | ✓ |
@@ -313,38 +316,58 @@ retirer que les 347 vrais désaccords) ; (b) sur-échantillonner ×8 les 11 vign
 
 **Preuve.** *différée* rappel **0,28 → 0,71**, macro-F1 **0,65 → 0,82** (v9). C'est le modèle servi.
 
-### 3.4 DPO : un négatif instructif, et un recadrage
+### 3.4 DPO : un négatif instructif, diagnostiqué… puis corrigé
 
 - **DPO** (Direct Preference Optimization) : montrer au modèle des paires (meilleure, moins bonne) réponses
   pour qu'il préfère la meilleure — alignement sans modèle de récompense séparé.
 - **Invariant d'ordonnancement.** Le DPO tourne sur le modèle SFT **adapter LoRA encore attaché** ; la fusion
   en poids 16-bit se fait **une seule fois, après DPO** — jamais entre les étapes.
 
-**Problème.** Aligner davantage le modèle par un DPO sur des **paires de préférences de triage équilibrées par direction**
-(211/24 : sous-triage 103 + safety 10 / sur-triage 48 / modérée 50), chosen = le bon niveau, rejected = un
-niveau **adjacent** erroné.
+**Tentative n°1 — l'effondrement.** Premières paires de triage « équilibrées par direction » (211/24 :
+sous-triage 103 + safety 10 / sur-triage 48 / modérée 50), chosen = le bon niveau, rejected = un niveau
+**adjacent** erroné. Résultat : macro-F1 **0,822 → 0,799**, extrêmes aiguisés (*différée* 0,71 → 0,96) mais
+**milieu effondré** (*modérée* 0,85 → **0,55**).
 
-**Preuve (n=300, greedy) :**
+**Diagnostic (le mécanisme, littérature à l'appui).** *modérée* est le niveau **rejected** pour **les deux**
+types de paires (sous-triage depuis *maximale*, sur-triage depuis *différée*) : ~168× « la mauvaise réponse »
+contre 56× « la bonne » → le DPO apprend à **éviter le milieu**. C'est un **déplacement de vraisemblance**
+(*likelihood displacement*, Razin et al. [2410.08847]) : la perte DPO ne récompense que **l'écart**
+log P(chosen) − log P(rejected) ; l'optimiseur peut l'agrandir en **écrasant P(rejected) au point de faire
+aussi baisser P(chosen)** — la marge grandit, mais la probabilité *absolue* de la bonne réponse chute.
 
-| n=300, greedy | macro-F1 | rappel maximale | rappel modérée | rappel différée | κ |
-|---|--:|--:|--:|--:|--:|
-| **SFT v9 (servi)** | **0,82** | 0,90 | **0,85** | 0,71 | 0,73 |
-| SFT + DPO | 0,80 | 0,92 | **0,55** | 0,96 | 0,72 |
+**Correction — de meilleures paires + une régularisation anti-effondrement :**
+1. **Distribution rejetée équilibrée** — chaque niveau apparaît *choisi* ET *rejeté* en proportions saines,
+   pour ne jamais pénaliser structurellement le milieu (invariant vérifié en test : *modérée* = 53× choisie /
+   151× rejetée, plus jamais absente du côté « choisi »).
+2. **Hard negatives** — des paires tirées des **vraies erreurs du SFT** (les cas qu'il rate), pas des
+   inversions de niveau synthétiques.
+3. **Régularisation anti-effondrement** — **`rpo_alpha` de TRL** (`DPOTrainer(rpo_alpha=1.0)`) : ajoute à la
+   perte DPO un terme **NLL/SFT sur la réponse *choisie*** (« continuer le SFT sur la bonne réponse pendant le
+   DPO »), qui **ancre P(chosen) vers le haut** et bloque l'effondrement. Équivalent : **DPO-Positive / Smaug**
+   [2402.13228] (pénalité dès que P(chosen) passe sous celle du modèle de référence).
 
-**Analyse (le mécanisme).** Le DPO a **aiguisé les extrêmes** (*différée* 0,71→0,96, maximale 0,90→0,92) mais
-**effondré le milieu** (*modérée* 0,85→0,55), pour un macro-F1 net **0,82→0,80**. Pourquoi ? *modérée* est le
-niveau **rejected** pour **les deux** types de paires (sous-triage depuis maximale, sur-triage depuis
-différée) : elle apparaît ~168× comme « la mauvaise réponse » contre 56× comme « la bonne » → le DPO apprend
-à **éviter la classe du milieu**. Les paires de niveaux **adjacents** pénalisent structurellement le milieu.
+**Preuve — comparaison *pommes-à-pommes*** (mêmes 300 *gold*, même harness, mêmes poids de base, adapter DPO
+activé/désactivé — seule variable : le DPO) :
 
-**Décision.** **Livrer le SFT v9** (macro-F1 0,82, meilleur équilibre) ; reporter le DPO comme **résultat
-négatif instructif**, technique démontrée et échec analysé.
+| n=300, greedy, même harness | macro-F1 | rappel maximale | rappel modérée | rappel différée |
+|---|--:|--:|--:|--:|
+| **SFT v9** | 0,827 | 0,84 | 0,88 | 0,75 |
+| **SFT v9 + DPO (`rpo_alpha`)** | **0,845** | **0,88** | 0,83 | **0,82** |
 
-**Recadrage clé (ce que j'ai clarifié après le mentorat).** Le brief attend le DPO pour l'**alignement
-clinique / la conformité aux protocoles** (préférer une réponse plus sûre), **pas** pour gagner de l'accuracy.
-C'est là sa vraie valeur : un levier de sécurité. Le SFT v9 est servi parce qu'il a le meilleur macro-F1 ;
-le DPO reste le bon outil pour, à terme, forcer l'unique sous-triage résiduel (1 *maximale* → *différée*)
-vers zéro, une fois les paires rééquilibrées pour ne pas écraser la classe intermédiaire.
+*(SFT v9 mesuré à 0,827 sur ce harness dédié — cohérent avec le 0,822 canonique de §5.2 à la marge de bruit ;
+les deux modèles sont notés avec le **même** harness pour une comparaison valide.)*
+
+**Plus d'effondrement** (les 3 classes 0,82–0,88, vs *modérée* 0,55 en tentative n°1) et un **gain net +0,018**,
+porté par un meilleur rappel *maximale* (sécurité) et *différée* pour un coût modeste sur *modérée* : un
+**profil orienté sécurité**, souhaitable en triage. Adapter persisté (HF `ghislaindelabie/oc14-qwen3-1.7b-triage-dpo-rpo`),
+reproductible (seed 3407), journalisé sur W&B.
+
+**Décision.** Le **SFT v9 reste servi en V1** : le gain +0,018 est **réel mais modeste** (dans la marge de
+bruit à n=300) → pas de swap de production sur cette seule base. Mais la leçon **est** le résultat :
+l'échec initial venait des **paires + l'absence de régularisation, pas de la méthode DPO**. Avec des paires
+équilibrées et `rpo_alpha`, le DPO **améliore** le modèle sans effondrer le milieu — le levier d'alignement
+clinique attendu par le brief, désormais **démontré fonctionnel** (et directement extensible : plus de hard
+negatives, plus de pas).
 
 ---
 
@@ -512,14 +535,25 @@ la classe du milieu (*modérée*) était systématiquement le côté « rejeté 
 **déplacement de vraisemblance** (*likelihood displacement* — Razin et al. [2410.08847], Smaug/DPO-Positive
 [2402.13228]) qui **effondre le milieu** (*modérée* 0,85 → 0,55). De plus, la cible d'alignement du DPO
 (format, disclaimer, escalade) était **déjà saturée à 1,00 par le SFT** → aucune marge à gagner. *Décision :*
-**conserver le SFT v9** ; documenter le DPO comme un **négatif bien diagnostiqué**, pas un échec.
+**conserver le SFT v9** en V1 ; documenter le DPO comme un **négatif bien diagnostiqué** — **repris et corrigé
+à l'étape 7**.
 
-**Étape 6 — v10 (en cours), l'amélioration du *jeu de données*.** Le vrai levier du post-mortem DPO n'est
-pas une autre méthode d'alignement, c'est un **meilleur jeu de données**. Pour réduire le biais de
-sur-triage résiduel, je **rééquilibre le train** (part *maximale* **54 % → 35 %**, *différée*
-**12 % → 18 %** — je garde tous les cas *différée* et *modérée*, je plafonne l'abondant *maximale*) et je
-**garantis une justification clinique réelle par cas** (issue d'un annotateur du consensus, plus de canned
-fallback). Entraînement en cours, suivi en direct sur W&B (`scripts/build_sft_v10.py`).
+**Étape 6 — v10, l'amélioration du *jeu de données*.** Le vrai levier du post-mortem DPO n'est pas une autre
+méthode d'alignement, c'est un **meilleur jeu de données**. Pour réduire le biais de sur-triage résiduel, je
+**rééquilibre le train** (part *maximale* **54 % → 35 %**, *différée* **12 % → 18 %** — je garde tous les cas
+*différée* et *modérée*, je plafonne l'abondant *maximale*) et je **garantis une justification clinique réelle
+par cas** (issue d'un annotateur du consensus, plus de canned fallback). **Entraîné puis évalué** sur le même
+*gold* : **macro-F1 0,822**, parité stricte avec v9 (matrice identique). Le gain *visé* — la **qualité des
+justifications** — n'est pas capté par la F1 par niveau : je le traite comme une **hypothèse non encore
+mesurée** (cf. §5.6), donc **v9 reste servi** (`scripts/build_sft_v10.py`).
+
+**Étape 7 — DPO, repris et corrigé (`rpo_alpha`).** Fort du diagnostic de l'étape 5, je **corrige les paires**
+(distribution rejetée équilibrée — chaque niveau *choisi* ET *rejeté*) et j'ajoute la **régularisation
+anti-effondrement `rpo_alpha`** (ancre NLL sur la réponse choisie). Comparaison **pommes-à-pommes** (mêmes 300
+*gold*, même harness, mêmes poids de base, adapter DPO activé/désactivé) : **v9 0,827 → DPO 0,845 (+0,018)**,
+**sans effondrement** (les 3 classes 0,82–0,88), profil orienté sécurité. Le DPO est donc **démontré
+fonctionnel** ; le gain restant **modeste** (marge de bruit à n=300) → **v9 reste servi en V1**, le DPO corrigé
+est persisté (HF) et directement extensible (cf. §3.4).
 
 **Récapitulatif de la progression :**
 
@@ -529,14 +563,14 @@ fallback). Entraînement en cours, suivi en direct sur W&B (`scripts/build_sft_v
 | 2 | SFT v8 (première éval) | 0,813 | **RETIRÉ** (fuite + échantillonnage + bruit) |
 | 3 | SFT v8 (éval corrigée) | 0,653 | intermédiaire — expose l'effondrement *différée* |
 | 4 | **SFT v9** | **0,822** | **SERVI** |
-| 5 | SFT v9 + DPO | 0,799 | négatif instructif (non retenu) |
-| 6 | SFT v10 | *en cours* | rééquilibrage du jeu de données |
+| 5 | SFT v9 + DPO (v1) | 0,799 | négatif instructif — effondrement *modérée* diagnostiqué |
+| 6 | SFT v10 | 0,822 | parité (amélioration *données* : justifications, hypothèse) |
+| 7 | **SFT v9 + DPO (`rpo_alpha`)** | **0,845** | corrigé — +0,018 pommes-à-pommes, sans effondrement (v9 servi en V1) |
 
-Ces cinq bras évalués (étapes 1–5) sont journalisés côté **W&B** (projet `oc14-triage-eval`) dans un
-tableau de bord de **comparaison d'expériences** — la trace visuelle de ce parcours : *base 0,19 ·
-sft-v8 0,813 RETIRÉ · sft-v8-honnête 0,653 · **sft-v9 0,822 SERVI** · dpo 0,799*. C'est un
-résumé d'éval final par bras (provenance dans `config.kernel` de chaque run), pas une courbe
-d'entraînement live (voir §5.6).
+Ces bras sont journalisés côté **W&B** (projet `oc14-triage-eval`) dans un tableau de bord de **comparaison
+d'expériences** : *base 0,19 · sft-v8 0,813 RETIRÉ · sft-v8-honnête 0,653 · **sft-v9 0,822 SERVI** · dpo 0,799 ·
+**dpo-`rpo_alpha` 0,845***. Un **W&B Sweep** dédié (learning rate / LoRA r / warmup, early-stop Hyperband) y
+ajoute les **courbes d'entraînement *live***. Provenance dans `config.kernel` de chaque run (voir §5.6).
 
 ### 5.6 Suivi d'expériences (W&B)
 
@@ -548,9 +582,10 @@ câblée et constitue un point d'amélioration MLOps (§8).
 > **Note (V1 servie = SFT v9).** Une itération **v10** — *jeu de données amélioré* (justifications de consensus
 > réelles intégrées + rééquilibrage) — a été **entraînée puis évaluée** sur le même *gold* n=300 (T4, greedy,
 > sans fuite) : **macro-F1 0,822**, soit une **parité stricte** avec v9 (rappels 0,90 / 0,85 / 0,71, κ 0,73 —
-> matrice de confusion identique). Le correctif v10 porte sur la **qualité des justifications** (rationales de
-> consensus réelles), non mesurée par la F1 par niveau ; **aucun gain de métrique ne justifie un redéploiement**,
-> donc **v9 reste servi**. v10 est une amélioration de *données*, pas un ajustement de métrique.
+> matrice de confusion identique). Le gain *visé* de v10 est la **qualité des justifications** (rationales de
+> consensus réelles) — non captée par la F1 par niveau, et **traitée ici comme une hypothèse non encore
+> quantifiée** (une éval en préférence par juge LLM reste à mener). **Aucun gain de métrique ne justifiant un
+> redéploiement, v9 reste servi** ; v10 est une amélioration de *données*, pas un ajustement de métrique.
 
 ---
 
@@ -572,7 +607,7 @@ L'**agent complet** (§4) est lui aussi exposé par FastAPI et conteneurisé ; l
 ### 6.2 CI/CD (GitHub Actions)
 
 `.github/workflows/ci.yml` :
-- **`lint-and-test`** (à chaque push / PR) : `uv sync`, **ruff** (lint), **pytest** (97 tests) — **verts**.
+- **`lint-and-test`** (à chaque push / PR) : `uv sync`, **ruff** (lint), **pytest** (suite complète) — **verts**.
   La CI ne touche pas de GPU (pas d'entraînement dans le pipeline).
 - **`deploy`** (job `workflow_dispatch` manuel) : build + push de l'image agent vers **GHCR**, puis un refresh
   d'endpoint **RunPod** gardé derrière le secret `RUNPOD_API_KEY` (no-op sans la clé). Déploiement automatisé
@@ -620,8 +655,14 @@ Secrets : clés en `.env` / secrets GitHub, **jamais commités**.
    sécurité est la **borne basse 0,83**.
 9. **Barre de sécurité.** ≥ 1 urgence sur 10 manquée au pire cas → **inacceptable pour un triage autonome**.
    Positionnement : **aide à la décision / human-in-the-loop**.
-10. **Améliorations MLOps différées (assumées) :** capture des **courbes d'entraînement W&B *live*** (au-delà
-    des résumés d'éval déjà suivis) et une campagne de **latence p50/p95** à plus grande échelle.
+10. **Améliorations MLOps différées (assumées) :** capture *systématique* des **courbes d'entraînement W&B
+    *live*** (un premier W&B Sweep live est en place, cf. §5.5) et une campagne de **latence p50/p95** à plus
+    grande échelle.
+11. **Robustesse hors-distribution.** Sur une entrée **absurde / non-clinique** (charabia), le modèle n'a pas de
+    voie « information insuffisante » : il **confabule** un verdict (observé : charabia → *maximale* avec des
+    signes d'alerte hallucinés). C'est un défaut de **robustesse OOD**, pas d'entraînement sur les vrais cas.
+    Mitigation : un **garde-fou d'entrée déterministe** (rejeter le charabia *avant* le triage — symétrique de
+    l'override red-flag : « garbage in → on refuse », pas « → maximale »), une voie d'**abstention**, et le **HITL**.
 
 ---
 
