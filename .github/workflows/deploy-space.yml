@@ -1,0 +1,36 @@
+name: Deploy HF Space
+
+# Auto-sync the public demo Space (ghislaindelabie/oc14-triage-demo) on every push to main
+# that touches the agent runtime or the Space build files. Code only — the Space's own
+# secrets/variables (VLLM_API_KEY, VLLM_BASE_URL, OC14_MODEL_ID, …) live on the Space and are
+# never set here. workflow_dispatch allows a manual re-sync.
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "src/oc14_triage/**"
+      - "deploy/hf-space/**"
+      - ".github/workflows/deploy-space.yml"
+  workflow_dispatch:
+
+# Serialize deploys; cancel an in-flight sync if a newer commit lands.
+concurrency:
+  group: deploy-hf-space
+  cancel-in-progress: true
+
+jobs:
+  sync-space:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install huggingface_hub
+        run: pip install "huggingface_hub>=0.23"
+      - name: Sync Space (code only)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python deploy/hf-space/sync_space.py

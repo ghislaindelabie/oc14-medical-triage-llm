@@ -1,0 +1,23 @@
+# CPU-only. Versions pinned to the project's uv.lock so the Space matches the tested demo.
+# UI + API tiers
+gradio==6.19.0
+fastapi==0.137.1
+uvicorn[standard]==0.49.0
+httpx==0.28.1
+# pydantic is left unpinned on purpose: HF injects gradio[mcp,oauth]==6.19.0, whose `mcp`
+# extra caps pydantic at <=2.12.5. Pinning 2.13.4 makes the build unresolvable. fastapi and
+# langgraph only need >=2.9 / >=2.7.4, so pip resolves a compatible 2.12.x here.
+pydantic>=2.9,<2.13
+
+# Agent chain + model backend (OpenAI-compatible vLLM client)
+langgraph==1.2.7
+openai==2.42.0
+
+# RGPD anonymisation (Presidio + spaCy NER); module falls back to regex if these fail.
+presidio-analyzer==2.2.362
+presidio-anonymizer==2.2.362
+spacy==3.8.14
+
+# spaCy models (installed from their official release wheels — no download step at runtime).
+https://github.com/explosion/spacy-models/releases/download/fr_core_news_md-3.8.0/fr_core_news_md-3.8.0-py3-none-any.whl
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
