@@ -65,6 +65,19 @@ def test_assemble_case_text_omits_blank_vitals():
     assert "Constantes" not in assemble_case_text(answers)
 
 
+def test_assemble_case_text_appends_complements_after_fixed_fields():
+    """Post-questionnaire follow-ups are appended so a re-triage reasons over the WHOLE
+    conversation (the LLM is stateless — the growing context is what it 'remembers')."""
+    answers = {"motif": "mal de dos", "debut": "hier", "intensite": "3"}
+    text = assemble_case_text(answers, "fr",
+                              complements=["la douleur irradie à la mâchoire", "  ", "et je transpire"])
+    assert "mal de dos" in text
+    assert "irradie à la mâchoire" in text          # first complement folded in
+    assert "je transpire" in text                   # later complement folded in
+    assert text.count("Information complémentaire") == 2   # blank complement skipped
+    assert text.index("Motif") < text.index("Information complémentaire")  # complements come after
+
+
 def test_incomplete_is_not_complete():
     assert is_complete({"motif": "toux légère"}) is False
 

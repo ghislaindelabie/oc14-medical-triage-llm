@@ -76,6 +76,7 @@ def answer(req: AnswerReq) -> dict:
         raise HTTPException(status_code=404, detail="unknown session")
     lang, answers = sess["lang"], sess["answers"]
     lang = lang if lang in ("fr", "en") else "fr"  # coerce unsupported langs
+    complements: list[str] = sess.setdefault("complements", [])
 
     field = next_field(answers, lang)
     # A blank answer must not fill a REQUIRED field — re-ask the SAME question so collecte can't
@@ -85,15 +86,22 @@ def answer(req: AnswerReq) -> dict:
         return {"done": False, "field": field, "question": next_question(answers, lang)}
     if field is not None:
         answers[field] = req.answer
+    elif req.answer.strip():
+        # Fixed questionnaire already complete → each further non-blank message is an
+        # "information complémentaire": accumulate it, re-assemble the WHOLE case, and re-run the
+        # chain on the augmented text (the LLM is stateless — passing the growing context is what
+        # makes the advice "remember the conversation"; a new red-flag here re-escalates).
+        complements.append(req.answer.strip())
 
     remaining = next_field(answers, lang)
     if remaining is not None:
         return {"done": False, "field": remaining,
                 "question": next_question(answers, lang)}
 
-    # collecte complete → run the chain (assembled text is anonymised inside the graph)
-    final = process_case(assemble_case_text(answers, lang), session_id=req.session_id,
-                         lang=lang, store=get_store(), answers=answers)
+    # collecte complete (or a follow-up complement arrived) → (re-)run the chain on the full text.
+    # Each run is a NEW interaction on the SAME session, so the dossier shows the advice evolving.
+    final = process_case(assemble_case_text(answers, lang, complements=complements),
+                         session_id=req.session_id, lang=lang, store=get_store(), answers=answers)
     return {
         "done": True, "session_id": req.session_id, "urgency": final.get("urgency"),
         "justification": final.get("justification", ""),
@@ -115,3 +123,10 @@ def session_history(session_id: str) -> dict:
 @app.get("/sessions")
 def sessions() -> dict:
     return {"sessions": get_store().all_sessions()}
+
+
+@app.get("/trace")
+def trace() -> dict:
+    """Global traceability archive: every interaction across ALL sessions, oldest first — backs
+    the demo dossier panel so every case AND every re-evaluation turn appears."""
+    return {"interactions": get_store().all_interactions()}

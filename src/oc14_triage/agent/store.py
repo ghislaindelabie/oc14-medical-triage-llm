@@ -81,3 +81,12 @@ class Store:
         with self._lock:
             cur = self._conn.execute("SELECT DISTINCT session_id FROM dossier")
             return [r["session_id"] for r in cur.fetchall()]
+
+    def all_interactions(self) -> list[dict]:
+        """Global traceability archive: every non-deleted interaction across ALL sessions,
+        oldest first. Backs the demo dossier panel so each consultation (its own session) shows."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT * FROM dossier WHERE deleted = 0 ORDER BY timestamp_utc"
+            )
+            return [dict(r) for r in cur.fetchall()]

@@ -71,6 +71,7 @@ _TEMPLATE = {
         "intensite": "Intensité (1-10) : {}.",
         "followup": "Précision : {}.",
         "vitals": "Constantes : {}.",
+        "complement": "Information complémentaire : {}.",
     },
     "en": {
         "motif": "Chief complaint: {}.",
@@ -78,6 +79,7 @@ _TEMPLATE = {
         "intensite": "Severity (1-10): {}.",
         "followup": "Detail: {}.",
         "vitals": "Vitals: {}.",
+        "complement": "Additional information: {}.",
     },
 }
 
@@ -93,15 +95,19 @@ def is_complete(answers: dict) -> bool:
     return next_field(answers) is None
 
 
-def assemble_case_text(answers: dict, lang: str = "fr") -> str:
+def assemble_case_text(answers: dict, lang: str = "fr",
+                       complements: list[str] | None = None) -> str:
     """Compose a short clinical free-text from the gathered answers — the model input.
 
-    Ordered motif -> followup -> debut -> intensite; only non-empty fields are emitted so a
-    partially-filled dossier still yields usable text."""
+    Ordered motif -> followup -> debut -> intensite -> vitals; only non-empty fields are emitted so
+    a partially-filled dossier still yields usable text. Any post-questionnaire `complements`
+    (free-text follow-ups) are appended so the re-triage reasons over the WHOLE conversation —
+    a new red-flag in a complement is what lets the updated verdict re-escalate."""
     order = ("motif", "followup", "debut", "intensite", "vitals")
     tmpl = _TEMPLATE[lang]
     parts = [tmpl[f].format(str(answers[f]).strip()) for f in order
              if f in answers and str(answers[f]).strip()]
+    parts += [tmpl["complement"].format(c.strip()) for c in (complements or []) if c.strip()]
     return " ".join(parts)
 
 

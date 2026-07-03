@@ -75,21 +75,26 @@ def test_render_result_high_confidence_has_no_review_notice():
     assert "revue" not in md.lower()   # no clinician-review notice when confident
 
 
-def test_refresh_empty_session_shows_placeholder_not_404(monkeypatch):
-    """Refreshing the dossier before any consultation must show a friendly placeholder, never a
-    raw HTTP-404 blob (an empty session id would otherwise hit GET /session/ → 404)."""
+def test_refresh_shows_global_archive_across_sessions(monkeypatch):
+    """The traceability panel is the GLOBAL dossier archive (GET /trace) — every case AND every
+    re-evaluation turn across every session — so an evaluator who submits several cases, or refines
+    one across follow-ups, sees them ALL, not just the last single turn."""
     calls = []
-    monkeypatch.setattr(ui_mod, "_get",
-                        lambda path: calls.append(path) or {"detail": "Client error '404 Not Found'"})
-    out = ui_mod._refresh("")
-    assert calls == []                     # no HTTP call made for an empty session
+    monkeypatch.setattr(ui_mod, "_get", lambda path: calls.append(path) or {
+        "interactions": [{"symptoms_anon": "mal de dos"}, {"symptoms_anon": "entorse cheville"}]})
+    out = ui_mod._refresh()
+    assert calls == ["/trace"]                       # global archive, not /session/{id}
+    assert len(out["interactions"]) == 2             # both distinct cases shown
+    assert out["interactions"][0]["symptoms_anon"] == "mal de dos"
+
+
+def test_refresh_empty_archive_shows_placeholder_not_error(monkeypatch):
+    """Refreshing before any consultation (or on a service error) shows a friendly placeholder,
+    never a raw error blob."""
+    monkeypatch.setattr(ui_mod, "_get", lambda path: {"detail": "Client error '404 Not Found'"})
+    out = ui_mod._refresh()
+    assert out["interactions"] == []
     assert "404" not in str(out)
-    assert "interactions" in out
-
-
-def test_refresh_valid_session_fetches_dossier(monkeypatch):
-    monkeypatch.setattr(ui_mod, "_get", lambda path: {"session_id": "s1", "interactions": [{"x": 1}]})
-    assert ui_mod._refresh("s1")["interactions"] == [{"x": 1}]
 
 
 def test_answer_bootstrap_while_service_down_prints_single_message(monkeypatch):
@@ -116,3 +121,14 @@ def test_render_result_unavailable_shows_notice_not_fake_level():
 def test_build_ui_returns_blocks():
     import gradio as gr
     assert isinstance(build_ui(), gr.Blocks)
+
+
+def test_trace_panel_label_is_traceability_not_sih():
+    """The panel shows the SQLite dossier de traçabilité, NOT a FHIR SIH record — label must
+    say so (regression guard for the 'Dossier SIH / historique' mislabel)."""
+    import gradio as gr
+    demo = build_ui()
+    labels = [c.label for c in demo.blocks.values()
+              if isinstance(c, gr.JSON) and getattr(c, "label", None)]
+    assert any("traçabilité" in lbl.lower() for lbl in labels)
+    assert not any("sih" in lbl.lower() for lbl in labels)
