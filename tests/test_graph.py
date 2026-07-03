@@ -141,3 +141,41 @@ def test_dossier_records_confidence_and_anonymised_vitals(tmp_path):
     row = store.history("c5")[0]
     assert row["confidence_level"] in ("high", "medium", "low")
     assert "SpO2 98%" in row["constantes"]   # vitals persisted (no PII to strip)
+
+
+# --- Unintelligible-input guardrail (deterministic OOD guard) -------------------------------
+
+def test_gibberish_input_refuses_without_a_verdict(tmp_path, monkeypatch):
+    # The observed bug: gibberish must NOT yield a confident (over-triaged) verdict. The
+    # deterministic guard flags it BEFORE the model, and the model output is discarded.
+    monkeypatch.setattr(gmod, "triage_once",
+                        lambda *a, **k: "1. Niveau d'urgence : urgence maximale. "
+                        "2. Justification : détresse respiratoire. 3. Recommandation : SAMU. "
+                        "Cet avis ne remplace pas une consultation médicale.")
+    final = gmod.process_case("ddsd dsfdsx dfd dsfd", lang="fr",
+                              session_id="g1", store=Store(tmp_path / "d.db"))
+    assert final["urgency"] is None                         # no fabricated urgency
+    assert final["needs_review"] is True
+    assert final["valid"] is False                          # flagged in prétraitement
+    j = (final["justification"] or "").lower()
+    assert "intelligible" in j or "insuffisant" in j        # honest reason surfaced
+    assert "détresse respiratoire" not in j                 # model hallucination NOT used
+    assert final["sih_record"]["resourceType"] == "Bundle"  # None urgency must not crash FHIR
+
+
+def test_terse_real_symptom_passes_the_guard(tmp_path):
+    # A short but REAL symptom must go through the normal triage path (guard is conservative).
+    final = gmod.process_case("fièvre depuis 2 jours", lang="fr",
+                              session_id="g2", store=Store(tmp_path / "d.db"))
+    assert final["valid"] is True
+    assert final["urgency"] in ("urgence maximale", "urgence modérée", "urgence différée")
+
+
+def test_redflag_amid_gibberish_still_escalates(tmp_path, monkeypatch):
+    # Safety override wins over the unintelligible guard: a red-flag buried in noise must
+    # still escalate to maximale rather than be refused as gibberish.
+    monkeypatch.setattr(gmod, "triage_once", lambda *a, **k: gmod._UNAVAILABLE)
+    final = gmod.process_case("ddsd douleur thoracique zzz", lang="fr",
+                              session_id="g3", store=Store(tmp_path / "d.db"))
+    assert final["urgency"] == "urgence maximale"
+    assert final["needs_review"] is True

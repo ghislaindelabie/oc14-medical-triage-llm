@@ -23,6 +23,7 @@ from .backend import _UNAVAILABLE, parse_triage, triage_once
 from .questionnaire import detect_red_flags
 from .sih import to_fhir
 from .state import TriageCase
+from .validation import intelligibility_reason, is_intelligible
 
 MAX = "urgence maximale"
 _DEFAULT_URGENCY = "urgence modérée"
@@ -48,9 +49,22 @@ def _anonymise(state: TriageCase) -> dict:
 
 
 def _pretraitement(state: TriageCase) -> dict:
+    lang = state.get("lang", "fr")
     text = state.get("anon_text", "").strip()
-    return {"red_flags": detect_red_flags(text, state.get("lang", "fr")),
-            "valid": bool(text), "validation_error": None if text else "empty input"}
+    red_flags = detect_red_flags(text, lang)
+    # Deterministic input-sanity guard (symmetric to the red-flag override): CLEAR gibberish
+    # must not reach the model, else it confabulates a confident verdict. A detected red-flag
+    # keeps the case valid so the safety override still escalates — refusal never suppresses
+    # an emergency cue.
+    if not text:
+        valid, error = False, "empty input"
+    elif red_flags:
+        valid, error = True, None
+    elif not is_intelligible(text, lang):
+        valid, error = False, intelligibility_reason(text, lang)
+    else:
+        valid, error = True, None
+    return {"red_flags": red_flags, "valid": valid, "validation_error": error}
 
 
 def _triage(state: TriageCase) -> dict:
@@ -62,6 +76,16 @@ def _triage(state: TriageCase) -> dict:
 def _explication(state: TriageCase) -> dict:
     model_output = state.get("model_output", "")
     red_flags = state.get("red_flags")
+    # Unintelligible input (deterministic guard, no red-flag rescue): the model verdict — if any —
+    # is DISCARDED and we return an honest refusal instead of a confabulated level. Red-flag cases
+    # never reach here (they stay `valid`), so the safety override always wins over this refusal.
+    if not state.get("valid", True) and not red_flags and state.get("validation_error") != "empty input":
+        return {"urgency": None, "confidence": "low", "needs_review": True,
+                "disclaimer_present": True,
+                "justification": "Entrée inintelligible ou information insuffisante — pas de verdict "
+                                 "de triage fiable possible.",
+                "recommendation": "Reformulez la demande avec des symptômes en clair ; en cas de "
+                                  "doute, ce cas relève de l'évaluation d'un clinicien."}
     # Backend unavailable (serverless cold start / outage): emit an HONEST notice — no fabricated
     # verdict. A detected red-flag still escalates to maximale (safety override wins).
     if model_output == _UNAVAILABLE:
