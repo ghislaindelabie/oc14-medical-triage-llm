@@ -544,8 +544,8 @@ méthode d'alignement, c'est un **meilleur jeu de données**. Pour réduire le b
 *différée* et *modérée*, je plafonne l'abondant *maximale*) et je **garantis une justification clinique réelle
 par cas** (issue d'un annotateur du consensus, plus de canned fallback). **Entraîné puis évalué** sur le même
 *gold* : **macro-F1 0,822**, parité stricte avec v9 (matrice identique). Le gain *visé* — la **qualité des
-justifications** — n'est pas capté par la F1 par niveau : je le traite comme une **hypothèse non encore
-mesurée** (cf. §5.6), donc **v9 reste servi** (`scripts/build_sft_v10.py`).
+justifications** — a depuis été **testé (juge LLM aveugle, n=48) = match nul statistique** (cf. §5.6), donc
+**v9 reste servi** (`scripts/build_sft_v10.py`).
 
 **Étape 7 — DPO, repris et corrigé (`rpo_alpha`).** Fort du diagnostic de l'étape 5, je **corrige les paires**
 (distribution rejetée équilibrée — chaque niveau *choisi* ET *rejeté*) et j'ajoute la **régularisation
@@ -564,7 +564,7 @@ est persisté (HF) et directement extensible (cf. §3.4).
 | 3 | SFT v8 (éval corrigée) | 0,653 | intermédiaire — expose l'effondrement *différée* |
 | 4 | **SFT v9** | **0,822** | **SERVI** |
 | 5 | SFT v9 + DPO (v1) | 0,799 | négatif instructif — effondrement *modérée* diagnostiqué |
-| 6 | SFT v10 | 0,822 | parité (amélioration *données* : justifications, hypothèse) |
+| 6 | SFT v10 | 0,822 | parité ; justifications testées (juge aveugle n=48) = match nul → non retenu |
 | 7 | **SFT v9 + DPO (`rpo_alpha`)** | **0,845** | corrigé — +0,018 pommes-à-pommes, sans effondrement (v9 servi en V1) |
 
 Ces bras sont journalisés côté **W&B** (projet `oc14-triage-eval`) dans un tableau de bord de **comparaison
@@ -583,9 +583,13 @@ câblée et constitue un point d'amélioration MLOps (§8).
 > réelles intégrées + rééquilibrage) — a été **entraînée puis évaluée** sur le même *gold* n=300 (T4, greedy,
 > sans fuite) : **macro-F1 0,822**, soit une **parité stricte** avec v9 (rappels 0,90 / 0,85 / 0,71, κ 0,73 —
 > matrice de confusion identique). Le gain *visé* de v10 est la **qualité des justifications** (rationales de
-> consensus réelles) — non captée par la F1 par niveau, et **traitée ici comme une hypothèse non encore
-> quantifiée** (une éval en préférence par juge LLM reste à mener). **Aucun gain de métrique ne justifiant un
-> redéploiement, v9 reste servi** ; v10 est une amélioration de *données*, pas un ajustement de métrique.
+> consensus réelles) — non captée par la F1 par niveau. Elle a depuis été **testée** par un **juge LLM aveugle**
+> (`claude-opus-4-8`, n=48 cas gold stratifiés, biais de position contrôlé) : **match nul statistique** — v10
+> l'emporte sur **0,44 [IC 95 % 0,31–0,58]** des cas, à égalité sur chaque critère → **aucun avantage de
+> justifications démontré**. **Ni gain de métrique ni gain de justifications ne justifiant un redéploiement,
+> v9 reste servi** ; v10 = amélioration de *données* non concluante sur ce POC. *(Note d'intégrité : la sortie
+> du kernel de fusion Kaggle est un merge v9 périmé ; le vrai v10 est l'adapter LoRA — à re-fusionner avant
+> tout déploiement.)*
 
 ---
 

@@ -186,9 +186,9 @@ API, cost-cap + terminate.
 > v10 = un jeu de données **amélioré** (justifications de consensus réelles + rééquilibrage), **entraîné et
 > évalué** sur le **même gold** : macro-F1 **0,822 = parité stricte** avec v9 (matrice identique). Donc **je n'ai
 > pas redéployé** : aucun gain de métrique ne justifie de changer la production → **discipline MLOps**. Le gain
-> *visé* est la **qualité des justifications** (que le macro-F1 par niveau ne mesure pas) — mais **je le présente
-> comme une hypothèse, pas un fait mesuré** : je ne l'ai pas encore quantifié par un juge côte-à-côte. À parité,
-> **v9 reste servi.**
+> *visé* est la **qualité des justifications** (que le macro-F1 par niveau ne mesure pas) — je l'ai **testé** en
+> A/B aveugle (juge `claude-opus-4-8`, n=48) : **match nul statistique** (v10 gagne 0,44 [0,31–0,58], à égalité
+> par critère). **Pas d'avantage démontré → v9 reste servi**, désormais sur *preuve*, pas seulement par discipline.
 
 **Q : Avez-vous fait une recherche d'hyperparamètres (le brief le suggère) ?**
 > Oui — un **W&B Sweep** sur RunPod : *learning rate*, rang LoRA (r), *warmup*, avec **early-stop Hyperband**,
@@ -352,7 +352,7 @@ en crédibilité. L'honnêteté méthodologique **est** l'argument.
 
 ## 4. Chiffres & faits à mémoriser
 
-- **macro-F1 : 0,19 (Base) → 0,82 (SFT v9 servi)**. DPO corrigé (`rpo_alpha`) : **0,845** vs v9 0,827 (pommes-à-pommes, **+0,018**, sans effondrement — v9 servi en V1). v10 : 0,822 (parité).
+- **macro-F1 : 0,19 (Base) → 0,82 (SFT v9 servi)**. DPO corrigé (`rpo_alpha`) : **0,845** vs v9 0,827 (pommes-à-pommes, **+0,018**, sans effondrement — v9 servi en V1). v10 : 0,822 (parité ; justifications testées en A/B aveugle = match nul → v9 gardé).
 - **Rappel urgence maximale : 0,90 [IC 95 % 0,83–0,95]**. Rappels v9 : max 0,90 / modérée 0,85 / différée 0,71. **κ = 0,73**.
 - **Éval : n=300** stratifié (100/100/100), greedy, sans fuite. Disclaimer/format : **1,00**.
 - **Données : ~5 600 paires** SFT (~82 % FR). Étiquetage **3-LLM**, **Fleiss κ ≈ 0,67**. Presidio sur **6 695** textes.
